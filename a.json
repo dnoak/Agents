@@ -1,0 +1,54 @@
+{
+    "automation:2025-12-12_14:20:17": {
+      "repeat": ["2025/12/12 18:00:00", "2025/12/13 18:00:00"],
+      "actions": [
+            {
+                "publish_iot": {
+                    "topic": "air_conditioner:cozinha:0",
+                    "args": {
+                        "set_temperature": 24, 
+                        "set_wind_speed": "auto"
+                    }
+                }
+            },
+            {
+                "publish_iot": {
+                    "topic": "light:cozinha:0",
+                    "args": {
+                        "set_brightness": 100,
+                        "set_color": "red"
+                    }
+                }
+            },
+            {
+                "assistant": {
+                    "name": "assistant_0",
+                    "args": {
+                        "instruction": [
+                            "se a previsão do tempo ao longo ",
+                            "da noite for menor que 24 graus, ",
+                            "desligue o ar condicionado da cozinha"
+                        ]
+                    }
+                }
+            }
+        ]
+    },
+    "automation:2025-12-13_16:12:54": {
+        "repeat": ["every 1 week"],
+        "actions": [
+            {
+                "assistant": {
+                    "name": "assistant_0",
+                    "args": {
+                        "instruction": [
+                            "confira se a piscina está suja, se",
+                            "estiver crie uma to-do note para ",
+                            "limpar a piscina que dispara todo dia"
+                        ]
+                    }
+                }
+            }
+        ]
+    }
+}

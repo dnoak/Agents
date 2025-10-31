@@ -1,0 +1,32 @@
+.env
+data/*
+logs/*
+**/__pycache__/
+*local_results.json
+
+*.app
+*.exe
+*.war
+
+# Large media files
+*.mp4
+*.m4a
+*.mp3
+*.wav
+*.ogg
+*.flac
+*.tiff
+*.avi
+*.flv
+*.mov
+*.wmv
+
+
+# OS generated files
+.DS_Store
+*.DS_Store
+*.DS_Store?
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
