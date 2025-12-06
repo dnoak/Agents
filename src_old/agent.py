@@ -217,21 +217,21 @@ class Agent:
         async with Agent.alocker:
             self.update_metadata(key, value)
 
-    def plot(self, animate: bool = False):
-        if not animate:
-            return Image.open(BytesIO(Agent.graph.pipe(format='png'))).show()
+        def plot(self, animate: bool = False):
+            if not animate:
+                return Image.open(BytesIO(Agent.graph.pipe(format='png'))).show()
 
-        def update_graph():
-            while True:
-                data = Agent.graph.pipe(format='jpeg', engine='dot') # 0.2 ~ 0.3s por frame
-                img_np = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-                cv2.namedWindow("Graph Animation", cv2.WINDOW_AUTOSIZE)
-                cv2.imshow("Graph Animation", img_np)
-                if cv2.waitKey(500) & 0xFF == 27:
-                    break
-            cv2.destroyAllWindows()
-        Agent.animate = True
-        update_graph()
+            def update_graph():
+                while True:
+                    data = Agent.graph.pipe(format='jpeg', engine='dot') # 0.2 ~ 0.3s por frame
+                    img_np = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+                    cv2.namedWindow("Graph Animation", cv2.WINDOW_AUTOSIZE)
+                    cv2.imshow("Graph Animation", img_np)
+                    if cv2.waitKey(500) & 0xFF == 27:
+                        break
+                cv2.destroyAllWindows()
+            Agent.animate = True
+            update_graph()
 
     def connect(self, agent: 'Agent', required: bool = True):
         self.output_nodes.append(agent)

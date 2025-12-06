@@ -2,14 +2,12 @@ from dataclasses import dataclass
 import json
 from collections import defaultdict
 import asyncio
-from termcolor import colored
-from src.message import Messages
-from typing import TYPE_CHECKING, ClassVar, Literal, Optional
+from typing import TYPE_CHECKING
 import time
-from src.node import NodeOutput
+# from src.node import NodeOutput
+from models.node import NodeOutput
 if TYPE_CHECKING:
     from src.node import Node
-    # from src.node import NodeOutput
 
 @dataclass
 class InputQueue:
@@ -28,7 +26,7 @@ class InputQueue:
                 ):
                 ready_input = self.pending_queue.pop(execution_id)
                 self.queue.put_nowait(list(ready_input.values()))
-
+    
     def put(self, input: NodeOutput):
         if input.source is None:
             return self.queue.put_nowait([input])
