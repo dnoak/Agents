@@ -4,13 +4,15 @@ from typing import Literal, Optional
 import json
 from typing import TYPE_CHECKING
 from datetime import datetime
+import uuid
+from rich import print
 if TYPE_CHECKING:
     from src.agent import Agent
     from src.instructions import LlmInstructions
 
 @dataclass(kw_only=True)
 class Message:
-    id: Optional[str] = None
+    id: str
     content: dict
     role: Literal['user', 'user:linked', 'assistant', 'tool:step', 'tool:result', 'system'] 
     timestamp: float = field(default_factory=lambda: time.time())
@@ -70,13 +72,18 @@ class Messages:
                 filtered.append(d)
                 continue
         return filtered
+    
+    def append(self, messages: 'Messages'):
+        assert self.id == messages.id
+        assert self.source == messages.source
+        self.data += messages.history
 
     def to_llm(self, roles_filter: dict[str, str] | Literal['basic', 'debug']) -> list[dict]:
         role_mapping = {
             'user': 'user',
             'user:linked': 'user',
             'assistant': 'assistant',
-            'tool:step': 'user', # *****
+            'tool:step': 'user',
             'tool:result': 'user',
             'system': 'system',
         }
@@ -103,7 +110,11 @@ class Messages:
     
     @instructions.setter
     def instructions(self, _instructions: str):
-        self.data.insert(0, Message(content={'sys': _instructions}, role='system'))
+        self.data.insert(0, Message(
+            id=str(uuid.uuid4()),
+            content={'sys': _instructions}, 
+            role='system')
+        )
         self.start_index = 1
 
     @property
@@ -126,16 +137,35 @@ class MessagesMerger:
     def merge(self) -> Messages:
         if len(self.messages) == 1:
             return self.messages[-1]
-        history = self.messages[-1].history[:-1]
-        merged = Message(
-            content={'inputs': [m.last.content for m in self.messages]},
-            role=self.messages[0].last.role,
-        )
+        
+        # history = self.messages[-1].history[:-1]
+        # merged = Message(
+        #     id=str(uuid.uuid4()),
+        #     content={'inputs': [m.last.content for m in self.messages]},
+        #     role=self.messages[0].last.role,
+        # )
+        # return Messages(
+        #     id=self.id,
+        #     data=history + [merged],
+        #     source=self.source,
+        # )
+        messages_list: list[Message] = self.messages[0].data
+        # messages_sources = [
+        #     m.source.name if m.source is not None else 'None' 
+        #     for m in self.messages
+        # ]
+
+        for m in self.messages[1:]:
+            for h in m.history:
+                messages_list.append(h)
+        
         return Messages(
             id=self.id,
-            data=history + [merged],
+            data=messages_list,
             source=self.source,
         )
+            
+                
 
 if __name__ == '__main__':
     import json
@@ -143,9 +173,9 @@ if __name__ == '__main__':
     a = Messages(
         id='a1',
         data=[
-            Message(content={'a': 1}, role='user'),
-            Message(content={'a': 2}, role='user'),
-            Message(content={'a': 3,'b': 3}, role='user'),
+            Message(id=str(uuid.uuid4()), content={'a': 1}, role='user'),
+            Message(id=str(uuid.uuid4()), content={'a': 2}, role='assistant'),
+            Message(id=str(uuid.uuid4()), content={'a': 3,'b': 3}, role='user'),
         ], 
         source=None,
     )
@@ -154,19 +184,23 @@ if __name__ == '__main__':
     b = Messages(
         id='b1',
         data=[
-            Message(content={'b': 4}, role='user'),
-            Message(content={'b': 5}, role='user'),
-            Message(content={'b': 6}, role='assistant'),
+            Message(id=str(uuid.uuid4()), content={'b': 4}, role='user'),
+            Message(id=str(uuid.uuid4()), content={'b': 5}, role='user'),
+            Message(id=str(uuid.uuid4()), content={'b': 6}, role='assistant'),
         ], 
         source=None,
     )
     b.instructions = 'Instruções do agente B'
 
-    merged = (MessagesMerger([a]).merge())
+    merged = (MessagesMerger(
+        id='merged',
+        messages=[a, b],
+        source=None,
+    ).merge())
     # print(a.instructions)
     # print(merged)
     # print(json.dumps(merged.last.content, indent=4, ensure_ascii=False))
     
-    print(json.dumps(merged.last.content, indent=4, ensure_ascii=False))
+    print(merged)
 
 
