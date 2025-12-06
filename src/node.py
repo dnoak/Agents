@@ -1,38 +1,14 @@
 from abc import ABC, abstractmethod
-import ast
 from dataclasses import dataclass, field
-import asyncio
-import json
-from typing import Literal, NewType, Optional, Type, ClassVar, Any
-import typing
-from pydantic import BaseModel, ConfigDict, field_validator, Field
-from termcolor import colored
-# from src.input_queue import InputQueue
-# from models.agent import AgentOutput, Processor, Replicator, Classifier
-from src.message import Message, Messages, MessagesMerger
+from pydantic import BaseModel
 from PIL import Image
 from io import BytesIO
 import uuid
+import asyncio
 import numpy as np
 import cv2
 import graphviz
 from rich import print
-
-@dataclass
-class NodeNames:
-    names: set[str] = field(default_factory=set)
-
-    def add(self, name: str):
-        if name in self.names:
-            raise ValueError(f'Agent name `{name}` already exists')
-        self.names.add(name)
-
-@dataclass
-class NodesMetadata:
-    names: NodeNames = field(default_factory=NodeNames)
-    alocker: asyncio.Lock = field(default_factory=asyncio.Lock)
-
-nodes_metadata = NodesMetadata()
 
 @dataclass
 class NodeForwardRules:
@@ -45,9 +21,7 @@ class NodeProcessor(ABC):
     @abstractmethod
     async def process(self, prev_results: list['NodeOutput']) -> int:
         ...
-        
 
-# @dataclass
 class NodeOutputSchema(BaseModel):
     ...
 
@@ -56,15 +30,27 @@ class NodeOutput:
     execution_id: str
     source: 'Node | None'
     result: int
-    # prev_results: list['NodeOutput']
 
-ExecutionId = str
-NodeName = str
+# @dataclass
+# class Execution:
+#     id: str
+#     nodes: dict[str, NodeOutput] = field(default_factory=dict)
 
 @dataclass
-class NodeExecutions:
-    id: str
-    nodes: dict[NodeName, NodeOutput]
+class Executions:
+    def __post_init__(self):
+        self.executions: dict[str, dict[str, NodeOutput]] = {}
+    
+    def insert(self, execution_id: str, node_output: NodeOutput):
+        print('🔴')
+        if execution_id not in self.executions:
+            self.executions[execution_id] = {}
+        source = '__input__' if node_output.source is None else node_output.source.name
+        self.executions[execution_id][source] = node_output
+    
+    def get(self, execution_id: str) -> dict[str, NodeOutput]:
+        return self.executions[execution_id]
+
 
 @dataclass(kw_only=True)
 class Node:
@@ -75,19 +61,28 @@ class Node:
     
     def __post_init__(self):
         from src.input_queue import InputQueue
-        nodes_metadata.names.add(self.name)
+        self._init_graph_globals()
+        self._assert_unique_name()
         self.inputs_queue: InputQueue = InputQueue(node=self)
         self.output_nodes: list[Node] = []
         self.input_nodes: list[Node] = []
         self.required_input_nodes_ids: set[str] = set()
         self.running: bool = False
-        # self.results: list[NodeOutput] = []
-        self.executions: dict[ExecutionId, NodeExecutions]
+
+    def _init_graph_globals(self):
+        if not hasattr(Node, 'names'):
+            Node.names = []
+        if not hasattr(Node, 'executions'):
+            Node.executions: Executions = Executions()
+    
+    def _assert_unique_name(self):
+        if self.name in Node.names:
+            raise ValueError(f'Agent name `{self.name}` already exists')
+        Node.names.append(self.name)
     
     def connect(self, node: 'Node', required: bool = True):
         self.output_nodes.append(node)
         node.input_nodes.append(self)
-        
         if required:
             node.required_input_nodes_ids.add(self.name)
 
@@ -109,14 +104,12 @@ class Node:
             source=self,
             result=processed,
         )
+        Node.executions.insert(input.execution_id, result)
 
-        
         forward_nodes = [node.run(result) for node in self.output_nodes]
         if forward_nodes:
             return sum(await asyncio.gather(*forward_nodes), [])
-        return [result]
-        
-        
+        return [result]        
 
 async def main():
     
@@ -199,7 +192,7 @@ async def main():
     res = sum(await asyncio.gather(*res), [])
     
     print(res)
-    
+    print(agent1.executions.get('exec_1'))
 
 if __name__ == '__main__':
     asyncio.run(main())
