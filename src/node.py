@@ -1,9 +1,6 @@
-from abc import ABC, abstractmethod
-from collections import defaultdict
-from dataclasses import dataclass, field, asdict
-from types import MethodType
-from typing import Any, ClassVar, get_type_hints
-from pydantic import BaseModel, ConfigDict, Field
+from dataclasses import dataclass, field
+from typing import Any, Literal, get_type_hints
+from pydantic import BaseModel
 from PIL import Image
 from io import BytesIO
 import dataclasses
@@ -13,139 +10,23 @@ import numpy as np
 import cv2
 import graphviz
 from rich import print
-# from src.input_queue import InputQueue
-# from models.node import (
-#     # NodeProcessor,
-#     # NodeProcessorBase,
-#     # NodeAttributes,
-#     # NodeOutput,
-#     # NodesExecutions,
-# )
-
-@dataclass
-class InputQueue:
-    node: 'Node'
-
-    def __post_init__(self):
-        self.alocker = asyncio.Lock()
-        self.queue: asyncio.Queue[list[NodeOutput]] = asyncio.Queue()
-        self.pending_queue: defaultdict[str, dict[str, NodeOutput]] = defaultdict(dict)
-
-    def _check_inputs_trigger(self, execution_id: str) -> None:
-        if self.node.required_input_nodes_ids.issubset(
-                self.pending_queue[execution_id].keys()
-            ):
-            ready_input = self.pending_queue.pop(execution_id)
-            self.queue.put_nowait(list(ready_input.values()))            
-    
-    def put(self, input: 'NodeOutput'):
-        if input.source.node is None:
-            return self.queue.put_nowait([input])
-        
-        self.pending_queue[input.execution_id][input.source.node.name] = input
-        self._check_inputs_trigger(input.execution_id)
-
-    async def get(self) -> list['NodeOutput']:
-        return await self.queue.get()
-
-
-class NodeAttributes:
-    @property
-    def digraph_graph(self) -> dict:
-        return {
-            'size': '500,500',
-            'bgcolor': '#353B41',
-        }
-    
-    @property
-    def digraph_node(cls) -> dict:
-        return {
-            'shape': 'plaintext',
-            'color': '#e6e6e6'  
-        }
-    
-    def node_label(
-            self,
-            name: str, 
-            output_schema: Any,
-            running: bool = False,
-        ) -> str:
-        node_color = '#228B22' if running else 'royalblue'
-        return f'''
-        <<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0">
-            <TR>
-                <TD COLSPAN="1" BGCOLOR="{node_color}">
-                    <FONT POINT-SIZE="20.0" COLOR="white">{name}</FONT>
-                </TD>
-            </TR>
-            <TR>
-                <TD PORT="here" BGCOLOR="#444444">
-                    <FONT POINT-SIZE="12.0" COLOR="white">{output_schema.__name__}</FONT>
-                </TD>
-            </TR>
-        </TABLE>>'''.strip()
-
-    def edge(self, running: bool = False) -> dict:
-        return {
-            'style': 'bold',
-            'color': 'green' if running else '#e6e6e6',
-            'fontcolor': 'green' if running else '#e6e6e6',
-        }
-
-@dataclass
-class NodeOutputSource:
-    id: str
-    node: 'Node | None'
-
-@dataclass
-class NodeOutput:
-    execution_id: str
-    source: NodeOutputSource
-    result: Any
-
-@dataclass
-class _NodeProcessor:
-    node: 'Node'
-    inputs: dict[str, NodeOutput]
-    routing: list['Node']
-
-    def inject_processor_fields(self, fields: set[str]) -> '_NodeProcessor':
-        for f in fields:
-            setattr(self, f, getattr(self.node.processor, f))
-        self.execute = MethodType(self.node.processor.execute.__func__, self)
-        return self
-    
-    async def execute(self) -> Any:
-        raise NotImplementedError('Replace this method with your own logic')
-    
-
-@dataclass
-class NodeProcessor(ABC):
-    node: 'Node' = field(init=False)
-    inputs: dict[str, NodeOutput] = field(init=False)
-    routing: list['Node'] = field(init=False)
-
-    def execute(self) -> Any:
-        ...
-
-@dataclass
-class NodesExecutions:
-    executions: dict[str, dict[str, NodeOutput]] = field(default_factory=dict)
-    
-    def insert(self, execution_id: str, node_output: NodeOutput):
-        if execution_id not in self.executions:
-            self.executions[execution_id] = {}
-        source = '__input__' if node_output.source.node is None else node_output.source.node.name
-        self.executions[execution_id][source] = node_output
-    
-    def get(self, execution_id: str) -> dict[str, NodeOutput]:
-        return self.executions[execution_id]
+from src.input_queue import InputQueue
+from models.node import (
+    _NodeProcessor,
+    NodeProcessor,
+    NodeAttributes,
+    NodeOutput,
+    NodeSource,
+    NodeRouting,
+    NodeInputs,
+    NodesExecutions,
+)
 
 @dataclass
 class Node:
     name: str
     processor: NodeProcessor
-    attributes: NodeAttributes = field(default_factory=NodeAttributes)
+    attributes: NodeAttributes = field(default_factory=NodeAttributes, repr=False)
 
     def __post_init__(self):
         self.output_schema = get_type_hints(self.processor.execute)['return']
@@ -159,7 +40,7 @@ class Node:
             set(n.name for n in dataclasses.fields(_NodeProcessor))
         )
         self._init_graph_globals()
-        self._assert_unique_name()
+        self._assert_node_name()
 
     def _init_graph_globals(self):
         if not hasattr(Node, 'names'):
@@ -178,16 +59,11 @@ class Node:
             **self.attributes.digraph_node,
         )
     
-    def _assert_unique_name(self):
+    def _assert_node_name(self):
         if self.name in Node.names:
             raise ValueError(f'Agent name `{self.name}` already exists')
         Node.names.append(self.name)
 
-    # def _inject_processor_base_fields(self, processor: _NodeProcessor):
-    #     for f in self._processor_fields_to_inject:
-    #         setattr(processor, f, getattr(self.processor, f))
-    #     processor.execute = MethodType(self.processor.execute.__func__, processor)
-    
     def plot(self, animate: bool = False):
         if not animate:
             return Image.open(BytesIO(Node.graph.pipe(format='png'))).show()
@@ -223,7 +99,7 @@ class Node:
             self,
             input: Any,
             execution_id: str,
-            source: NodeOutputSource,
+            source: NodeSource,
         ) -> list[NodeOutput]:
         self.inputs_queue.put(NodeOutput(execution_id, source, input))
         if self.running:
@@ -231,26 +107,35 @@ class Node:
         self.running = True
         
         run_inputs = await self.inputs_queue.get()
-
+        
         processor = _NodeProcessor(
             node=self,
-            inputs={i.source.node.name if i.source.node else '__start__': i for i in run_inputs},
-            routing=[n for n in self.output_nodes],
+            # inputs={i.source.node.name if i.source.node else '__start__': i for i in run_inputs},
+            inputs=NodeInputs(node=self, _inputs=run_inputs),
+            routing=NodeRouting(
+                node=self,
+                choices={n.name: n for n in self.output_nodes},
+                default_policy='all',
+            ),
         ).inject_processor_fields(self._processor_fields_to_inject)
 
         output = NodeOutput(
             execution_id=execution_id, 
-            source=NodeOutputSource(id=execution_id, node=self), 
+            source=NodeSource(id=execution_id, node=self), 
             result=await processor.execute()
         )
         Node.executions.insert(execution_id, output)
         forward_nodes = [
             node.run(output.result, execution_id, output.source, ) 
-            for node in processor.routing
+            for node in processor.routing.selected_nodes.values()
         ]
         if forward_nodes:
             return sum(await asyncio.gather(*forward_nodes), [])
         return [output]
+    
+
+
+
 
 async def main():
     class OutputProcessor(BaseModel):
@@ -285,11 +170,11 @@ async def main():
     
     agent1 = Node(
         name='agent1',
-        processor=Processor1234(),
+        processor=Processor1234(3),
     )
     agent2 = Node(
         name='agent2',
-        processor=Processor1234(),
+        processor=Processor1234(4),
     )
     agent3 = Node(
         name='agent3',
@@ -319,22 +204,22 @@ async def main():
         agent1.run(
             input='input1',
             execution_id='exec_1',
-            source=NodeOutputSource(id='user_1', node=None),
+            source=NodeSource(id='user_1', node=None),
         ),
         agent2.run(
             input='input2',
             execution_id='exec_1',
-            source=NodeOutputSource(id='user_2', node=None),
+            source=NodeSource(id='user_2', node=None),
         ),
         agent3.run(
             input='input3',
             execution_id='exec_1',
-            source=NodeOutputSource(id='user_3', node=None),
+            source=NodeSource(id='user_3', node=None),
         ),
         agent4.run(
             input='input3',
             execution_id='exec_1',
-            source=NodeOutputSource(id='user_4', node=None),
+            source=NodeSource(id='user_4', node=None),
         ),
     ]
     res = sum(await asyncio.gather(*res), [])
