@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from collections import defaultdict
-import asyncio
 from typing import TYPE_CHECKING
-from models.node import NodeOutput
+from src.models.node import NodeOutput
 if TYPE_CHECKING:
-    from src.node import Node
+    from src.nodes.node import Node
+import asyncio
 
 @dataclass
 class InputQueue:

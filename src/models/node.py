@@ -5,8 +5,7 @@ from types import MethodType
 from abc import ABC
 from dataclasses import dataclass
 if TYPE_CHECKING:
-    from src.node import Node
-
+    from src.nodes.node import Node
 
 @dataclass
 class NodeSource:
@@ -22,7 +21,6 @@ class NodeOutput:
 @dataclass
 class _NodeProcessor:
     node: 'Node'
-    # inputs: dict[str, NodeOutput]
     inputs: 'NodeInputs'
     routing: 'NodeRouting'
 
@@ -38,7 +36,6 @@ class _NodeProcessor:
 @dataclass
 class NodeProcessor(ABC):
     node: 'Node' = field(init=False, repr=False)
-    # inputs: dict[str, NodeOutput] = field(init=False, repr=False)
     inputs: 'NodeInputs' = field(init=False, repr=False)
     routing: 'NodeRouting' = field(init=False, repr=False)
 
@@ -92,23 +89,29 @@ class NodeRouting:
     default_policy: Literal['all', 'none']
 
     def __post_init__(self):
-        self._item_setted = False
+        self._item_added = False
         if self.default_policy == 'all':
             self.selected_nodes = {k: v for k, v in self.choices.items()}
         elif self.default_policy == 'none':
             self.selected_nodes = {}
 
-    def set(self, node_name: str) -> bool:
-        if not self._item_setted:
+    def add(self, node_name: str) -> bool:
+        if not self._item_added:
             self.selected_nodes = {}
         if node_name in self.choices:
             self.selected_nodes[node_name] = self.choices[node_name]
-            self._item_setted = True
+            self._item_added = True
             return True
         raise ValueError(
             f'Node `{node_name}` is not in the routing choices of `{self.node.name}`. '
             f'Choices are {list(self.choices.keys())}'
         )
+
+    def remove(self, node_name: str) -> bool:
+        raise NotImplementedError
+    
+    def clear(self):
+        self.selected_nodes = {}
 
 class NodeAttributes:
     @property
