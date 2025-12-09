@@ -43,7 +43,7 @@ async def nn():
     n13.connect(n21)
     
     n21.connect(n31)
-    # n11.plot()
+    n11.plot()
 
     inputs = [
         nx.run(

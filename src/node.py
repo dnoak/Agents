@@ -148,8 +148,8 @@ async def main():
         async def execute(self) -> OutputProcessor:
             print(self.teste)
             total = []
-            for node_name, input in self.inputs.items():
-                total.append(input.result)
+            for result in self.inputs.results:
+                total.append(result)
             total.append(self.node.name)
             return OutputProcessor(result=' -> '.join(total))
     
