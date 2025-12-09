@@ -3,6 +3,7 @@ from typing import Any, get_type_hints
 from pydantic import BaseModel
 from PIL import Image
 from io import BytesIO
+from collections import defaultdict
 import dataclasses
 import asyncio
 import numpy as np
@@ -15,8 +16,10 @@ from src.models.node import (
     NodeProcessor,
     NodeAttributes,
     NodeOutput,
+    NodeOutputFlags,
     NodeSource,
     NodeRouting,
+    # NodeRoutingFlags,
     NodeInputs,
     NodesExecutions,
 )
@@ -32,8 +35,8 @@ class Node:
         self.inputs_queue: InputQueue = InputQueue(node=self)
         self.output_nodes: list[Node] = []
         self.input_nodes: list[Node] = []
-        self.required_input_nodes_ids: set[str] = set()
-        self.running: bool = False
+        self.is_terminal: bool = True
+        self.running_executions: defaultdict[str, set[str]] = defaultdict(set)
         self._processor_fields_to_inject = set.difference(
             set(n.name for n in dataclasses.fields(self.processor)),
             set(n.name for n in dataclasses.fields(_NodeProcessor))
@@ -53,7 +56,6 @@ class Node:
             label=self.attributes.node_label(
                 self.name, 
                 self.output_schema,
-                running=self.running,
             ), 
             **self.attributes.digraph_node,
         )
@@ -78,15 +80,11 @@ class Node:
         Node.animate = True
         update_graph()
 
-    def connect(self, node: 'Node', required: bool = True):
+    def connect(self, node: 'Node'):
+        self.is_terminal = False
         self.output_nodes.append(node)
         node.input_nodes.append(self)
-        if required:
-            node.required_input_nodes_ids.add(self.name)
         attributes = self.attributes.edge()
-        if not required:
-            attributes['style'] = 'dashed'
-            attributes['arrowhead'] = 'odot'
         Node.graph.edge(
             tail_name=self.name,
             head_name=node.name, 
@@ -98,38 +96,61 @@ class Node:
             self,
             input: Any,
             execution_id: str,
+            flags: NodeOutputFlags,
             source: NodeSource,
         ) -> list[NodeOutput]:
-        self.inputs_queue.put(NodeOutput(execution_id, source, input))
-        if self.running:
+
+        self.inputs_queue.put(NodeOutput(
+            execution_id=execution_id,
+            source=source,
+            result=input,
+            flags=flags,
+        ))
+        if execution_id in self.running_executions:
             return []
-        self.running = True
+        self.running_executions[execution_id].add(source.id)
         
         run_inputs = await self.inputs_queue.get()
         
         processor = _NodeProcessor(
             node=self,
-            # inputs={i.source.node.name if i.source.node else '__start__': i for i in run_inputs},
-            inputs=NodeInputs(node=self, _inputs=run_inputs),
+            inputs=NodeInputs(_node=self, _inputs=run_inputs),
             routing=NodeRouting(
-                node=self,
                 choices={n.name: n for n in self.output_nodes},
                 default_policy='all',
             ),
         ).inject_processor_fields(self._processor_fields_to_inject)
 
-        output = NodeOutput(
-            execution_id=execution_id, 
-            source=NodeSource(id=execution_id, node=self), 
-            result=await processor.execute()
-        )
-        Node.executions.insert(execution_id, output)
+        if not all(r.flags.canceled for r in run_inputs):
+            processor.result = await processor.execute()
+            flags.canceled = False
+        else:
+            processor.routing.end()
+            flags.canceled = True
+
+        print(f'{self.name}: {[processor.routing.flags[n.name].canceled for n in self.output_nodes]}')
         forward_nodes = [
-            node.run(output.result, execution_id, output.source, ) 
-            for node in processor.routing.selected_nodes.values()
+            node.run(
+                input=processor.result, 
+                execution_id=execution_id, 
+                source=NodeSource(id=execution_id, node=self),
+                flags=processor.routing.flags[node.name]
+            )
+            for node in self.output_nodes
         ]
         if forward_nodes:
             return sum(await asyncio.gather(*forward_nodes), [])
-        return [output]
+
+        if not self.is_terminal:
+            if processor.routing.empty():
+                flags.canceled = True
+
+        self.running_executions[execution_id].remove(source.id)
+        return [NodeOutput(
+            execution_id=execution_id, 
+            source=NodeSource(id=execution_id, node=self),
+            result=processor.result,
+            flags=flags,
+        )]
     
 

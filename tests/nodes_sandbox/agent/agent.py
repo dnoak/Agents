@@ -1,18 +1,19 @@
 from typing import Literal
 from pydantic import BaseModel
 from src.nodes.node import Node, NodeProcessor, NodeSource
+from src.models.node import NodeOutputFlags
 from dataclasses import dataclass
 import asyncio
 import numpy as np
 from rich import print
-from litellm import acompletion
+# from litellm import acompletion
 from config import settings
 
 @dataclass
 class UserInput(NodeProcessor):
     async def execute(self) -> str:
-        return input('User: ')
-    
+        return input('User input: ')
+
 class ClassifierOutput(BaseModel):
     choices: Literal['basic_response', 'pesticide_search']
 
@@ -21,6 +22,7 @@ class Classifier(NodeProcessor):
     system_prompt: str = '''Você é um agente classificador de conteúdos de agronomia. Você deve classificar a mensagem do usuário entre:
     - basic_response: o usuário fez uma pergunta genérica sobre agronomia.
     - pesticide_search: o usuário está procurando informações de pestifida.'''
+    
     async def execute(self) -> str:
         usr =self.inputs['user_input'].result
         if 'agronomia' in usr:
@@ -28,23 +30,14 @@ class Classifier(NodeProcessor):
         elif 'pesticide' in usr:
             self.routing.add('pesticide_search')
         else:
-            self.routing.clear()
-        # response = await acompletion(
-        #     model='gpt-5-mini',
-        #     messages=[{
-        #         'system': self.system_prompt,
-        #         'user': self.inputs['user_input'].result,
-        #     }],
-        #     response_format=ClassifierOutput
-        # )
-        # self.routing.set(response.choices[0].message.content)
+            self.routing.end()
         return self.inputs['user_input'].result
 
 @dataclass
 class BasicResponse(NodeProcessor):
     async def execute(self) -> str:
         return 'Basic response'
-    
+
 @dataclass
 class PesticideSearch(NodeProcessor):
     async def execute(self) -> str:
@@ -60,12 +53,22 @@ async def main():
     classifier.connect(basic_response)
     classifier.connect(pesticide_search)
     classifier.plot()
-
-    res = await user_input.run(
+    
+    res1 = await user_input.run(
         input=None,
         execution_id='exec_1',
         source=NodeSource(id='user_1', node=None),
+        flags=NodeOutputFlags(),
     )
-    print(res)
+    # print(list(filter(lambda x: x.flags.canceled is False, res)))
+    print(res1)
+
+    # res2 = await user_input.run(
+    #     input=None,
+    #     execution_id='exec_2',
+    #     source=NodeSource(id='user_2', node=None),
+    #     flags=NodeOutputFlags(),
+    # )
+    # print(res2)
 
 asyncio.run(main())

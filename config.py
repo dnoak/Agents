@@ -46,7 +46,12 @@ class LlmSettings(BaseSettings):
     gemini_api_key: str
     model_config = SettingsConfigDict(env_prefix='LLM_')
 
+class NodeSettings(BaseSettings):
+    first_execution_source: str
+    model_config = SettingsConfigDict(env_prefix='NODE_')
+
 class Settings(BaseSettings, case_sensitive=False):
+    node: NodeSettings = NodeSettings()
     fastapi: FastApiSettings = FastApiSettings()
     mcp: McpSettings = McpSettings()
     redis: RedisSettings = RedisSettings()

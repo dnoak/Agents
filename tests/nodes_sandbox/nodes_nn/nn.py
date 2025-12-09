@@ -1,13 +1,15 @@
-from src.node import Node, NodeProcessor, NodeSource
+from src.models.node import NodeOutputFlags
+from src.nodes.node import Node, NodeProcessor, NodeSource
 from dataclasses import dataclass
 import asyncio
 import numpy as np
 from rich import print
-    
+from config import settings
+
 @dataclass
 class NeuronInput(NodeProcessor):
     async def execute(self) -> float:
-        return self.inputs['__start__'].result
+        return self.inputs[settings.node.first_execution_source].result
 
 @dataclass
 class Neuron(NodeProcessor):
@@ -21,7 +23,7 @@ class Neuron(NodeProcessor):
         return float(a)
 
 async def nn():
-    nx = Node(name="nx", processor=NeuronInput(),)
+    nx = Node(name="nx", processor=NeuronInput())
     ny = Node(name="ny", processor=NeuronInput())
     
     n11 = Node(name="n11", processor=Neuron(w=[-0.69, -0.77], b=-0.23))
@@ -43,18 +45,20 @@ async def nn():
     n13.connect(n21)
     
     n21.connect(n31)
-    # n11.plot()
+    n11.plot()
 
     inputs = [
         nx.run(
-            input=1.9,
+            input=0.97,
             execution_id='nn',
             source=NodeSource(id='user_nn', node=None),
+            flags=NodeOutputFlags(),
         ),
         ny.run(
-            input=-0.9,
+            input=-2.3,
             execution_id='nn',
             source=NodeSource(id='user_nn', node=None),
+            flags=NodeOutputFlags(),
         ),
     ]
 

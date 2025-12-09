@@ -4,6 +4,7 @@ from typing import Any, TYPE_CHECKING, Literal
 from types import MethodType
 from abc import ABC
 from dataclasses import dataclass
+from config import settings
 if TYPE_CHECKING:
     from src.nodes.node import Node
 
@@ -11,20 +12,45 @@ if TYPE_CHECKING:
 class NodeSource:
     id: str
     node: 'Node | None'
+    # routing: 'NodeRouting' = field(
+    #     default_factory=lambda: NodeRouting(
+    #         choices={},
+    #         # default_policy='all',
+    #         flags=NodeRoutingFlags(),
+    #     )
+    # )
+
+@dataclass
+class NodeOutputFlags:
+    canceled: bool = False
+    error: bool = False
 
 @dataclass
 class NodeOutput:
     execution_id: str
     source: NodeSource
+    # routing: 'NodeRouting'
     result: Any
+    flags: NodeOutputFlags
+
+@dataclass
+class NotProcessed:
+    pass
+
+_NotProcessed = NotProcessed()
 
 @dataclass
 class _NodeProcessor:
     node: 'Node'
     inputs: 'NodeInputs'
     routing: 'NodeRouting'
+    
+    def __post_init__(self):
+        self.result: Any = _NotProcessed
 
     def inject_processor_fields(self, fields: set[str]) -> '_NodeProcessor':
+        if self.node is None:
+            return self
         for f in fields:
             setattr(self, f, getattr(self.node.processor, f))
         self.execute = MethodType(self.node.processor.execute.__func__, self)
@@ -45,20 +71,21 @@ class NodeProcessor(ABC):
 
 @dataclass
 class NodeInputs:
-    node: 'Node'
+    _node: 'Node'
     _inputs: list[NodeOutput]
 
     def __post_init__(self):
         self._dict_inputs = {
-            i.source.node.name if i.source.node else '__start__': i
-            for i in self._inputs
+            i.source.node.name if i.source.node 
+            else settings.node.first_execution_source:
+            i for i in self._inputs
         }
 
     def __getitem__(self, node_name: str) -> NodeOutput:
         if node_name in self._dict_inputs:
             return self._dict_inputs[node_name]
         raise KeyError(
-            f'Input `{node_name}` not found in {self.node.name}. Available inputs are {list(self._dict_inputs.keys())}'
+            f'Input `{node_name}` not found in {self._node.name}. Available inputs are {list(self._dict_inputs.keys())}'
         )
 
     def __iter__(self):
@@ -66,7 +93,11 @@ class NodeInputs:
     
     @property
     def results(self) -> list[Any]:
-        return [i.result for i in self._dict_inputs.values()]
+        return [
+            i.result for i in self._dict_inputs.values()
+            # if i.result is not _NotProcessed
+            if i.flags.canceled is False
+        ]
 
 
 @dataclass
@@ -76,42 +107,57 @@ class NodesExecutions:
     def insert(self, execution_id: str, node_output: NodeOutput):
         if execution_id not in self.executions:
             self.executions[execution_id] = {}
-        source = '__input__' if node_output.source.node is None else node_output.source.node.name
-        self.executions[execution_id][source] = node_output
+        if node_output.source.node is None:
+            source_name = settings.node.first_execution_source
+        else:
+            source_name = node_output.source.node.name
+        self.executions[execution_id][source_name] = node_output
     
     def get(self, execution_id: str) -> dict[str, NodeOutput]:
         return self.executions[execution_id]
 
+# @dataclass
+# class NodeRoutinFlags:
+#     canceled: bool = False
+#     error: bool = False
+
 @dataclass
 class NodeRouting:
-    node: 'Node'
     choices: dict[str, 'Node']
     default_policy: Literal['all', 'none']
+    flags: dict[str, NodeOutputFlags] = field(init=False)
 
     def __post_init__(self):
-        self._item_added = False
+        self._none_item_added = True
         if self.default_policy == 'all':
-            self.selected_nodes = {k: v for k, v in self.choices.items()}
+            self.all()
         elif self.default_policy == 'none':
-            self.selected_nodes = {}
+            self.end()
+
+    def empty(self) -> bool:
+        return not any(f.canceled for f in self.flags.values())
 
     def add(self, node_name: str) -> bool:
-        if not self._item_added:
-            self.selected_nodes = {}
         if node_name in self.choices:
-            self.selected_nodes[node_name] = self.choices[node_name]
-            self._item_added = True
+            if self._none_item_added:
+                self.end()
+            self.flags[node_name].canceled = False
+            self._none_item_added = False
             return True
         raise ValueError(
-            f'Node `{node_name}` is not in the routing choices of `{self.node.name}`. '
-            f'Choices are {list(self.choices.keys())}'
+            f'Node `{node_name}` is not in the routing choices of {list(self.choices.keys())}.'
         )
 
     def remove(self, node_name: str) -> bool:
         raise NotImplementedError
+
+    def all(self):
+        "Send to all the nodes"
+        self.flags = {k: NodeOutputFlags(canceled=False) for k in self.choices.keys()}
     
-    def clear(self):
-        self.selected_nodes = {}
+    def end(self):
+        "Remove all the nodes (terminal state for this node)"
+        self.flags = {k: NodeOutputFlags(canceled=True) for k in self.choices.keys()}
 
 class NodeAttributes:
     @property
