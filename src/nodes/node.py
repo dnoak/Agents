@@ -82,6 +82,7 @@ class Node:
     def connect(self, node: 'Node'):
         self.is_terminal = False
         self.output_nodes.append(node)
+        node.inputs_queue.sort_order.append(self.name)
         node.input_nodes.append(self)
         attributes = self.attributes.edge()
         Node.graph.edge(
@@ -98,7 +99,7 @@ class Node:
             flags: NodeOutputFlags,
             source: NodeSource,
         ) -> list[NodeOutput]:
-
+        
         self.inputs_queue.put(NodeOutput(
             execution_id=execution_id,
             source=source,
