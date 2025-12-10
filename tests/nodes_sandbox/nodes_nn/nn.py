@@ -1,6 +1,6 @@
 import random
-from src.models.node import NodeOutput, NodeOutputFlags
-from src.nodes.node import Node, NodeProcessor, NodeSource
+from src.models.node import NodeIO, NodeIOFlags
+from src.nodes.node import Node, NodeProcessor, NodeIOSource
 from dataclasses import dataclass
 import asyncio
 import numpy as np
@@ -10,7 +10,6 @@ from config import settings
 @dataclass
 class NeuronInput(NodeProcessor):
     async def execute(self) -> float:
-        # print(f'{self.inputs._inputs[0].execution_id} {self.node.name}: {self.inputs.results} {self.inputs[settings.node.first_execution_source].result}')
         return self.inputs[settings.node.first_execution_source].result
 
 @dataclass
@@ -68,47 +67,43 @@ async def nn():
     # real_outputs = []
     for i, (x, y) in enumerate(xy):
         inputs = [
-            nx.run(
-                input=x,
-                execution_id=f'{i}',
-                source=NodeSource(id=f'user_nn{i}', node=None),
-                flags=NodeOutputFlags(),
-            ),
-            ny.run(
-                input=y,
-                execution_id=f'{i}',
-                source=NodeSource(id=f'user_nn{i}', node=None),
-                flags=NodeOutputFlags(),
-            ),
+            nx.run(NodeIO(
+                source=NodeIOSource(id=f'user_nn{i}', execution_id=f'{i}', node=None),
+                result=x,
+                flags=NodeIOFlags(),
+            )),
+            ny.run(NodeIO(
+                source=NodeIOSource(id=f'user_nn{i}', execution_id=f'{i}', node=None),
+                result=y,
+                flags=NodeIOFlags(),
+            )),
         ]
         outputs += inputs
         # real_outputs.append(neuron(x, y))
-
+    
     random.shuffle(outputs)
 
-    results: list[NodeOutput] = sum(await asyncio.gather(*outputs), [])
-    results.sort(key=lambda x: int(x.execution_id))
+    results: list[NodeIO] = sum(await asyncio.gather(*outputs), [])
+    results.sort(key=lambda x: int(x.source.execution_id))
 
     for exec_id, exec in nx.executions.executions.items():
-        assert {exec_id} == set(v.execution_id for v in exec.values()) 
+        assert {exec_id} == set(v.source.execution_id for v in exec.values()) 
 
     for i, ((x, y), res) in enumerate(zip(xy, results)):
-        
+
         batch_nodes_output = res.result
         real_output = neuron(x, y)[0]
         unique_nodes = [
-            nx.run(
-                input=x,
-                execution_id=f'a{i}',
-                source=NodeSource(id=f'user_nn{i}', node=None),
-                flags=NodeOutputFlags(),
-            ),
-            ny.run(
-                input=y,
-                execution_id=f'a{i}',
-                source=NodeSource(id=f'user_nn{i}', node=None),
-                flags=NodeOutputFlags(),
-            ),
+            nx.run(NodeIO(
+                source=NodeIOSource(id=f'user_nn{i}', execution_id=f'a{i}', node=None),
+                result=x,
+                flags=NodeIOFlags(),
+            )),
+            ny.run(NodeIO(
+                source=NodeIOSource(id=f'user_nn{i}', execution_id=f'a{i}', node=None),
+                result=y,
+                flags=NodeIOFlags(),
+            )),
         ]
         unique_nodes_output = sum(await asyncio.gather(*unique_nodes), [])[0].result
 
@@ -117,17 +112,17 @@ async def nn():
 
 
 
-        print(f'exec_id: {res.execution_id}')
+        print(f'exec_id: {res.source.execution_id}')
         print(f'x: {x}, y: {y}')
         print(f'real  : {real_output}')
         print(f'{assert1}batch : {batch_nodes_output}')
         print(f'{assert2}unique: {unique_nodes_output}')
         if assert1:
-            batch_exec = nx.executions.executions[res.execution_id]
+            batch_exec = nx.executions.executions[res.source.execution_id]
             unique_exec = nx.executions.executions[f'a{i}']
             assert set(batch_exec.keys()) == set(unique_exec.keys())
             for node_name in batch_exec.keys():
-                node_batch_exec = nx.executions.executions[res.execution_id][node_name]
+                node_batch_exec = nx.executions.executions[res.source.execution_id][node_name]
                 node_unique_exec = nx.executions.executions[f'a{i}'][node_name]
 
                 try:

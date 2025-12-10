@@ -15,11 +15,13 @@ from src.models.node import (
     _NodeProcessor,
     NodeProcessor,
     NodeAttributes,
-    NodeOutput,
-    NodeOutputFlags,
-    NodeSource,
-    NodeRouting,
-    NodeInputs,
+    # NodeOutput,
+    # NodeOutputFlags,
+    NodeIO,
+    NodeIOFlags,
+    NodeIOSource,
+    NodeProcessorRouting,
+    NodeProcessorInputs,
     NodesExecutions,
 )
 
@@ -92,77 +94,66 @@ class Node:
         )
         return node
     
-    async def run(
-            self,
-            input: Any,
-            execution_id: str,
-            flags: NodeOutputFlags,
-            source: NodeSource,
-        ) -> list[NodeOutput]:
-        
-        self.inputs_queue.put(NodeOutput(
-            execution_id=execution_id,
-            source=source,
-            result=input,
-            flags=flags,
-        ))
-        if execution_id in self.running_executions:
-            return []
-        self.running_executions[execution_id].add(source.id)
-        
-        run_inputs = await self.inputs_queue.get(execution_id)
-        assert {execution_id} == set(i.execution_id for i in run_inputs)
-        
+    async def _start(self, source: NodeIOSource, inputs: list[NodeIO]) -> list[NodeIO]:
         processor = _NodeProcessor(
             node=self,
-            inputs=NodeInputs(_node=self, _inputs=run_inputs),
-            routing=NodeRouting(
+            inputs=NodeProcessorInputs(_node=self, _inputs=inputs),
+            routing=NodeProcessorRouting(
                 choices={n.name: n for n in self.output_nodes},
                 default_policy='all',
             ),
         ).inject_processor_fields(self._processor_fields_to_inject)
 
-        if not all(r.flags.canceled for r in run_inputs):
+        if not all(r.flags.canceled for r in inputs):
             processor.result = await processor.execute()
-            flags.canceled = False
+            flags_canceled = False
         else:
-            processor.routing.end()
-            flags.canceled = True
+            processor.routing.to_none()
+            flags_canceled = True
 
-        output = NodeOutput(
-            execution_id=execution_id, 
-            source=NodeSource(id=execution_id, node=self),
+        output = NodeIO(
+            source=source,
             result=processor.result,
-            flags=flags,
+            flags=NodeIOFlags(canceled=flags_canceled),
         )
 
         Node.executions.insert(output)
-
+        
         forward_nodes = [
             node.run(
-                input=processor.result, 
-                execution_id=execution_id, 
-                source=NodeSource(id=execution_id, node=self),
-                flags=processor.routing.flags[node.name]
+                input=NodeIO(
+                    source=source,
+                    result=processor.result,
+                    flags=processor.routing._flags[node.name],
+                )
             )
             for node in self.output_nodes
         ]
         if forward_nodes:
             return sum(await asyncio.gather(*forward_nodes), [])
-
-        # if not self.is_terminal:
-        #     if processor.routing.empty():
-        #         flags.canceled = True
-
-        # self.running_executions[execution_id].remove(source.id)
-        # return [NodeOutput(
-        #     execution_id=execution_id, 
-        #     source=NodeSource(id=execution_id, node=self),
-        #     result=processor.result,
-        #     flags=flags,
-        # )]
-
-        self.running_executions[execution_id].remove(source.id)
+        
         return [output]
-    
 
+    async def run(self, input: NodeIO) -> list[NodeIO]:
+        self.inputs_queue.put(NodeIO(
+            source=input.source,
+            result=input.result,
+            flags=input.flags,
+        ))
+        if input.source.execution_id in self.running_executions:
+            return []
+        self.running_executions[input.source.execution_id].add(self.name)
+        
+        run_inputs = await self.inputs_queue.get(input.source.execution_id)
+        
+        output = await self._start(
+            source=NodeIOSource(
+                id=input.source.id, 
+                execution_id=input.source.execution_id, 
+                node=self
+            ),
+            inputs=run_inputs,
+        )
+        self.running_executions[input.source.execution_id].remove(self.name)
+
+        return output

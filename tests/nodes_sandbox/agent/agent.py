@@ -1,7 +1,7 @@
 from typing import Literal
 from pydantic import BaseModel
 from src.nodes.node import Node, NodeProcessor, NodeSource
-from src.models.node import NodeOutputFlags
+from src.models.node import NodeIOFlags, NodeIO
 from dataclasses import dataclass
 import asyncio
 import numpy as np
@@ -54,12 +54,17 @@ async def main():
     classifier.connect(pesticide_search)
     classifier.plot()
     
-    res1 = await user_input.run(
-        input=None,
-        execution_id='exec_1',
-        source=NodeSource(id='user_1', node=None),
-        flags=NodeOutputFlags(),
-    )
+    # res1 = await user_input.run(
+    #     input=None,
+    #     execution_id='exec_1',
+    #     source=NodeSource(id='user_1', node=None),
+    #     flags=NodeOutputFlags(),
+    # )
+    res1 = await user_input.run(NodeIO(
+        source=NodeSource(id='user_1', execution_id='exec_1', node=None),
+        result=None,
+        flags=NodeIOFlags(),
+    ))
     # print(list(filter(lambda x: x.flags.canceled is False, res)))
     print(res1)
 
