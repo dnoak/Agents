@@ -19,7 +19,6 @@ from src.models.node import (
     NodeOutputFlags,
     NodeSource,
     NodeRouting,
-    # NodeRoutingFlags,
     NodeInputs,
     NodesExecutions,
 )
@@ -91,7 +90,7 @@ class Node:
             **attributes
         )
         return node
-
+    
     async def run(
             self,
             input: Any,
@@ -110,7 +109,8 @@ class Node:
             return []
         self.running_executions[execution_id].add(source.id)
         
-        run_inputs = await self.inputs_queue.get()
+        run_inputs = await self.inputs_queue.get(execution_id)
+        assert {execution_id} == set(i.execution_id for i in run_inputs)
         
         processor = _NodeProcessor(
             node=self,
@@ -128,7 +128,15 @@ class Node:
             processor.routing.end()
             flags.canceled = True
 
-        print(f'{self.name}: {[processor.routing.flags[n.name].canceled for n in self.output_nodes]}')
+        output = NodeOutput(
+            execution_id=execution_id, 
+            source=NodeSource(id=execution_id, node=self),
+            result=processor.result,
+            flags=flags,
+        )
+
+        Node.executions.insert(output)
+
         forward_nodes = [
             node.run(
                 input=processor.result, 
@@ -141,16 +149,19 @@ class Node:
         if forward_nodes:
             return sum(await asyncio.gather(*forward_nodes), [])
 
-        if not self.is_terminal:
-            if processor.routing.empty():
-                flags.canceled = True
+        # if not self.is_terminal:
+        #     if processor.routing.empty():
+        #         flags.canceled = True
+
+        # self.running_executions[execution_id].remove(source.id)
+        # return [NodeOutput(
+        #     execution_id=execution_id, 
+        #     source=NodeSource(id=execution_id, node=self),
+        #     result=processor.result,
+        #     flags=flags,
+        # )]
 
         self.running_executions[execution_id].remove(source.id)
-        return [NodeOutput(
-            execution_id=execution_id, 
-            source=NodeSource(id=execution_id, node=self),
-            result=processor.result,
-            flags=flags,
-        )]
+        return [output]
     
 

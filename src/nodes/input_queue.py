@@ -13,27 +13,34 @@ class InputQueue:
     
     def __post_init__(self):
         self.alocker = asyncio.Lock()
-        self.queue: asyncio.Queue[list[NodeOutput]] = asyncio.Queue()
-        self.pending_queue: defaultdict[str, dict[str, NodeOutput]] = defaultdict(dict)
+        self.futures: dict[str, asyncio.Future[list[NodeOutput]]] = {}
+        self.pending: defaultdict[str, dict[str, NodeOutput]] = defaultdict(dict)
         self.required_inputs: defaultdict[str, set[str]] = defaultdict(set)
 
     def put(self, input: 'NodeOutput'):
         if input.source.node is None:
-            self.queue.put_nowait([input])
+            future = asyncio.get_running_loop().create_future()
+            future.set_result([input])
+            self.futures[input.execution_id] = future
             return
         
-        if input.execution_id not in self.pending_queue:
+        first_execution = input.execution_id not in self.pending
+        if first_execution:
             self.required_inputs[input.execution_id] = {node.name for node in self.node.input_nodes}
-        
+            self.futures[input.execution_id] = asyncio.get_event_loop().create_future()
+            
         if input.flags.canceled:
             self.required_inputs[input.execution_id].remove(input.source.node.name)
         
-        self.pending_queue[input.execution_id][input.source.node.name] = input
+        self.pending[input.execution_id][input.source.node.name] = input
         
         if self.required_inputs[input.execution_id].issubset(
-                self.pending_queue[input.execution_id].keys()
+                self.pending[input.execution_id].keys()
             ):
-            self.queue.put_nowait(list(self.pending_queue.pop(input.execution_id).values()))
-
-    async def get(self) -> list['NodeOutput']:
-        return await self.queue.get()
+            values = list(self.pending.pop(input.execution_id).values())
+            self.futures[input.execution_id].set_result(values)
+    
+    async def get(self, execution_id: str) -> list['NodeOutput']:
+        await self.futures[execution_id]
+        return self.futures.pop(execution_id).result()
+        

@@ -8,56 +8,56 @@ from rich import print
 
 @dataclass
 class A(NodeProcessor):
-    async def execute(self) -> str:
-        # self.routing.add('d')
+    async def execute(self) -> list[str]:
+        self.routing.add('d')
         # self.routing.add('b')
         # self.routing.add('c')
         # self.routing.add('c')
         # self.routing.end()
         # self.routing.all()
         # print('⚠️ A processor')
-        return ' -> '.join(self.inputs.results + [self.node.name])
+        return sum(self.inputs.results, []) + [self.node.name]
 
 @dataclass
 class B(NodeProcessor):
-    async def execute(self) -> str:
+    async def execute(self) -> list[str]:
         # print('⚠️ B processor')
         # self.routing.end()
         # await asyncio.sleep(random.choice([1, 2, 3]))
-        return ' -> '.join(self.inputs.results + [self.node.name])
+        return sum(self.inputs.results, []) + [self.node.name]
 
 @dataclass
 class C(NodeProcessor):
-    async def execute(self) -> str:
+    async def execute(self) -> list[str]:
         # print('⚠️ C processor')
-        return ' -> '.join(self.inputs.results + [self.node.name])
+        return sum(self.inputs.results, []) + [self.node.name]
 
 @dataclass
 class D(NodeProcessor):
-    async def execute(self) -> str:
+    async def execute(self) -> list[str]:
         # self.routing.end()
         # print('⚠️ D processor')
-        return ' -> '.join(self.inputs.results + [self.node.name])
+        return sum(self.inputs.results, []) + [self.node.name]
 
 @dataclass
 class E(NodeProcessor):
-    async def execute(self) -> str:
+    async def execute(self) -> list[str]:
         # print('⚠️ E processor')
-        # self.routing.end()  
-        return ' -> '.join(self.inputs.results + [self.node.name])
+        # self.routing.end()
+        return sum(self.inputs.results, []) + [self.node.name]
 
 @dataclass
 class F(NodeProcessor):
-    async def execute(self) -> str:
+    async def execute(self) -> list[str]:
         # print('⚠️ F processor')
         # print([i for i in self.inputs])
         # print(self.inputs['b'])
-        return ' -> '.join(self.inputs.results + [self.node.name])
-    
+        return sum(self.inputs.results, []) + [self.node.name]
+
 @dataclass
 class G(NodeProcessor):
-    async def execute(self) -> str:
-        return ' -> '.join(self.inputs.results + [self.node.name])
+    async def execute(self) -> list[str]:
+        return sum(self.inputs.results, []) + [self.node.name]
 
 async def main():
     a = Node(name="a", processor=A())
@@ -83,7 +83,7 @@ async def main():
 
 
     res1 = a.run(
-        input='input',
+        input=['input'],
         execution_id='exec_1',
         source=NodeSource(id='user_1', node=None),
         flags=NodeOutputFlags(),

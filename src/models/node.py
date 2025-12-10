@@ -95,31 +95,24 @@ class NodeInputs:
     def results(self) -> list[Any]:
         return [
             i.result for i in self._dict_inputs.values()
-            # if i.result is not _NotProcessed
             if i.flags.canceled is False
         ]
-
 
 @dataclass
 class NodesExecutions:
     executions: dict[str, dict[str, NodeOutput]] = field(default_factory=dict)
     
-    def insert(self, execution_id: str, node_output: NodeOutput):
-        if execution_id not in self.executions:
-            self.executions[execution_id] = {}
+    def insert(self, node_output: NodeOutput):
+        if node_output.execution_id not in self.executions:
+            self.executions[node_output.execution_id] = {}
         if node_output.source.node is None:
             source_name = settings.node.first_execution_source
         else:
             source_name = node_output.source.node.name
-        self.executions[execution_id][source_name] = node_output
+        self.executions[node_output.execution_id][source_name] = node_output
     
     def get(self, execution_id: str) -> dict[str, NodeOutput]:
         return self.executions[execution_id]
-
-# @dataclass
-# class NodeRoutinFlags:
-#     canceled: bool = False
-#     error: bool = False
 
 @dataclass
 class NodeRouting:
