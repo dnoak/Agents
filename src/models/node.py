@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import copy
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING, Literal
 from types import MethodType
@@ -28,38 +29,12 @@ class NodeIO:
 @dataclass
 class NotProcessed:
     pass
-
 _NotProcessed = NotProcessed()
 
 @dataclass
-class _NodeProcessor:
-    node: 'Node'
-    inputs: 'NodeProcessorInputs'
-    routing: 'NodeProcessorRouting'
-    
-    def __post_init__(self):
-        self.result: Any = _NotProcessed
-
-    def inject_processor_fields(self, fields: set[str]) -> '_NodeProcessor':
-        if self.node is None:
-            return self
-        for f in fields:
-            setattr(self, f, getattr(self.node.processor, f))
-        self.execute = MethodType(self.node.processor.execute.__func__, self)
-        return self
-    
-    async def execute(self) -> Any:
-        raise NotImplementedError('Replace this method with your own logic')
-
-@dataclass
-class NodeProcessor(ABC):
-    node: 'Node' = field(init=False, repr=False)
-    inputs: 'NodeProcessorInputs' = field(init=False, repr=False)
-    routing: 'NodeProcessorRouting' = field(init=False, repr=False)
-
-    @abstractmethod
-    def execute(self) -> Any:
-        ...
+class NodeProcessorConfig:
+    deep_copy_fields: bool = False
+    blablabla: str = ''
 
 @dataclass
 class NodeProcessorInputs:
@@ -127,6 +102,51 @@ class NodeProcessorRouting:
     def to_none(self):
         "Remove all the nodes (terminal state for this node)"
         self._flags = {k: NodeIOFlags(canceled=True) for k in self.choices.keys()}
+
+@dataclass
+class _NodeProcessor:
+    node: 'Node'
+    inputs: NodeProcessorInputs
+    routing: NodeProcessorRouting
+    config: NodeProcessorConfig
+    
+    def __post_init__(self):
+        self.result: Any = _NotProcessed
+        if self.config.deep_copy_fields:
+            self.set_attr = self._set_attr_deepcopy
+        else:
+            self.set_attr = self._set_attr
+
+    def _set_attr(self, field: str):
+        setattr(self, field, getattr(self.node.processor, field))
+
+    def _set_attr_deepcopy(self, field: str):
+        setattr(self, field, copy.deepcopy(getattr(self.node.processor, field)))
+    
+    def inject_processor_fields(self, fields: set[str]) -> '_NodeProcessor':
+        if self.node is None:
+            return self
+        for f in fields:
+            self.set_attr(f)
+        self.execute = MethodType(self.node.processor.execute.__func__, self)
+        return self
+    
+    async def execute(self) -> Any:
+        raise NotImplementedError('Replace this method with your own logic')
+
+@dataclass(kw_only=True)
+class NodeProcessor(ABC):
+    node: 'Node' = field(init=False, repr=False)
+    inputs: NodeProcessorInputs = field(init=False, repr=False)
+    routing: NodeProcessorRouting = field(init=False, repr=False)
+    config: NodeProcessorConfig = field(init=False, repr=False)
+
+    def __post_init__(self):
+        self.config = getattr(self, 'config', NodeProcessorConfig())
+    
+    @abstractmethod
+    def execute(self) -> Any:
+        ...
 
 @dataclass
 class NodesExecutions:

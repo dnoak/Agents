@@ -1,7 +1,8 @@
 import random
-from src.models.node import NodeIO, NodeIOFlags
+from typing import ClassVar
+from src.models.node import NodeIO, NodeIOFlags, NodeProcessorConfig
 from src.nodes.node import Node, NodeProcessor, NodeIOSource
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import asyncio
 import numpy as np
 from rich import print
@@ -9,6 +10,7 @@ from config import settings
 
 @dataclass
 class NeuronInput(NodeProcessor):
+    config = NodeProcessorConfig(blablabla='🔴🟢')
     async def execute(self) -> float:
         return self.inputs[settings.node.first_execution_source].result
 
@@ -16,8 +18,17 @@ class NeuronInput(NodeProcessor):
 class Neuron(NodeProcessor):
     w: list[float]
     b: float
-    
+    config = NodeProcessorConfig(deep_copy_fields=True)
+
     async def execute(self) -> float:
+        b = self.b
+        w0 = self.w[0]
+        self.b = -100
+        self.w[0] = -100
+        await asyncio.sleep(random.uniform(0, 0.1))
+        self.b = b
+        self.w[0] = w0
+
         x = np.array(self.inputs.results)
         z = x @ self.w + self.b
         a = max(z, 0.)
@@ -79,8 +90,7 @@ async def nn():
             )),
         ]
         outputs += inputs
-        # real_outputs.append(neuron(x, y))
-    
+
     random.shuffle(outputs)
 
     results: list[NodeIO] = sum(await asyncio.gather(*outputs), [])
@@ -109,9 +119,7 @@ async def nn():
 
         assert1 = (batch_nodes_output != real_output) * '🔴 '
         assert2 = (unique_nodes_output != real_output) * '🔴 '
-
-
-
+        
         print(f'exec_id: {res.source.execution_id}')
         print(f'x: {x}, y: {y}')
         print(f'real  : {real_output}')
@@ -139,7 +147,6 @@ async def nn():
                 print(f'node: {node_name}')
                 print(f'batch : {node_batch_exec.result}, {wb}, {bb}')
                 print(f'unique: {node_unique_exec.result}, {wu}, {bu}')
-                
             input()
         print()
         # assert res.result == rout[0]

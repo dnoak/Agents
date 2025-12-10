@@ -15,8 +15,6 @@ from src.models.node import (
     _NodeProcessor,
     NodeProcessor,
     NodeAttributes,
-    # NodeOutput,
-    # NodeOutputFlags,
     NodeIO,
     NodeIOFlags,
     NodeIOSource,
@@ -38,7 +36,7 @@ class Node:
         self.input_nodes: list[Node] = []
         self.is_terminal: bool = True
         self.running_executions: defaultdict[str, set[str]] = defaultdict(set)
-        self._processor_fields_to_inject = set.difference(
+        self._processor_fields_to_inject: set[str] = set.difference(
             set(n.name for n in dataclasses.fields(self.processor)),
             set(n.name for n in dataclasses.fields(_NodeProcessor))
         )
@@ -102,6 +100,7 @@ class Node:
                 choices={n.name: n for n in self.output_nodes},
                 default_policy='all',
             ),
+            config=self.processor.config
         ).inject_processor_fields(self._processor_fields_to_inject)
 
         if not all(r.flags.canceled for r in inputs):
