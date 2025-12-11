@@ -34,7 +34,6 @@ _NotProcessed = NotProcessed()
 @dataclass
 class NodeProcessorConfig:
     deep_copy_fields: bool = False
-    blablabla: str = ''
 
 @dataclass
 class NodeProcessorInputs:

@@ -1,6 +1,6 @@
 from typing import Literal
 from pydantic import BaseModel
-from src.nodes.node import Node, NodeProcessor, NodeSource
+from src.nodes.node import Node, NodeProcessor, NodeIOSource
 from src.models.node import NodeIOFlags, NodeIO
 from dataclasses import dataclass
 import asyncio
@@ -30,7 +30,7 @@ class Classifier(NodeProcessor):
         elif 'pesticide' in usr:
             self.routing.add('pesticide_search')
         else:
-            self.routing.end()
+            self.routing.to_none()
         return self.inputs['user_input'].result
 
 @dataclass
@@ -61,7 +61,7 @@ async def main():
     #     flags=NodeOutputFlags(),
     # )
     res1 = await user_input.run(NodeIO(
-        source=NodeSource(id='user_1', execution_id='exec_1', node=None),
+        source=NodeIOSource(id='user_1', execution_id='exec_1', node=None),
         result=None,
         flags=NodeIOFlags(),
     ))
