@@ -1,14 +1,13 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from collections import defaultdict
 from typing import TYPE_CHECKING
-from config import settings
-from src.models.node import NodeIO
+from nodes.models.node import NodeIO
 if TYPE_CHECKING:
-    from src.nodes.node import Node
+    from nodes.engine.node import Node
 import asyncio
 
 @dataclass
-class InputQueue:
+class NodeInputsQueue:
     node: 'Node'
     
     def __post_init__(self):

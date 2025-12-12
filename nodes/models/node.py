@@ -5,9 +5,10 @@ from typing import Any, TYPE_CHECKING, Literal
 from types import MethodType
 from abc import ABC
 from dataclasses import dataclass
-from config import settings
 if TYPE_CHECKING:
-    from src.nodes.node import Node
+    from nodes.engine.node import Node
+
+NodeExternalInput = '__input__'
 
 @dataclass
 class NodeIOFlags:
@@ -32,18 +33,18 @@ class NotProcessed:
 _NotProcessed = NotProcessed()
 
 @dataclass
-class NodeProcessorConfig:
+class NodeOperatorConfig:
     deep_copy_fields: bool = False
 
 @dataclass
-class NodeProcessorInputs:
+class NodeOperatorInputs:
     _node: 'Node'
     _inputs: list[NodeIO]
 
     def __post_init__(self):
         self._dict_inputs = {
             i.source.node.name if i.source.node 
-            else settings.node.first_execution_source:
+            else NodeExternalInput:
             i for i in self._inputs
         }
 
@@ -65,7 +66,7 @@ class NodeProcessorInputs:
         ]
 
 @dataclass
-class NodeProcessorRouting:
+class NodeOperatorRouting:
     choices: dict[str, 'Node']
     default_policy: Literal['all', 'none']
     _flags: dict[str, NodeIOFlags] = field(init=False)
@@ -103,11 +104,11 @@ class NodeProcessorRouting:
         self._flags = {k: NodeIOFlags(canceled=True) for k in self.choices.keys()}
 
 @dataclass
-class _NodeProcessor:
+class _NodeOperator:
     node: 'Node'
-    inputs: NodeProcessorInputs
-    routing: NodeProcessorRouting
-    config: NodeProcessorConfig
+    inputs: NodeOperatorInputs
+    routing: NodeOperatorRouting
+    config: NodeOperatorConfig
     
     def __post_init__(self):
         self.result: Any = _NotProcessed
@@ -117,34 +118,34 @@ class _NodeProcessor:
             self.set_attr = self._set_attr
 
     def _set_attr(self, field: str):
-        setattr(self, field, getattr(self.node.processor, field))
+        setattr(self, field, getattr(self.node.operator, field))
 
     def _set_attr_deepcopy(self, field: str):
-        setattr(self, field, copy.deepcopy(getattr(self.node.processor, field)))
+        setattr(self, field, copy.deepcopy(getattr(self.node.operator, field)))
     
-    def inject_processor_fields(self, fields: set[str]) -> '_NodeProcessor':
+    def inject_operator_fields(self, fields: set[str]) -> '_NodeOperator':
         if self.node is None:
             return self
         for f in fields:
             self.set_attr(f)
-        self.execute = MethodType(self.node.processor.execute.__func__, self)
+        self.execute = MethodType(self.node.operator.execute.__func__, self)
         return self
     
     async def execute(self) -> Any:
         raise NotImplementedError('Replace this method with your own logic')
 
 @dataclass(kw_only=True)
-class NodeProcessor(ABC):
+class NodeOperator(ABC):
     node: 'Node' = field(init=False, repr=False)
-    inputs: NodeProcessorInputs = field(init=False, repr=False)
-    routing: NodeProcessorRouting = field(init=False, repr=False)
-    config: NodeProcessorConfig = field(init=False, repr=False)
+    inputs: NodeOperatorInputs = field(init=False, repr=False)
+    routing: NodeOperatorRouting = field(init=False, repr=False)
+    config: NodeOperatorConfig = field(init=False, repr=False)
 
     def __post_init__(self):
-        self.config = getattr(self, 'config', NodeProcessorConfig())
+        self.config = getattr(self, 'config', NodeOperatorConfig())
     
     @abstractmethod
-    def execute(self) -> Any:
+    async def execute(self) -> Any:
         ...
 
 @dataclass
@@ -154,10 +155,7 @@ class NodesExecutions:
     def insert(self, node_output: NodeIO):
         if node_output.source.execution_id not in self.executions:
             self.executions[node_output.source.execution_id] = {}
-        if node_output.source.node is None:
-            source_name = settings.node.first_execution_source
-        else:
-            source_name = node_output.source.node.name
+        source_name = node_output.source.node.name # type: ignore
         self.executions[node_output.source.execution_id][source_name] = node_output
     
     def get(self, execution_id: str) -> dict[str, NodeIO]:

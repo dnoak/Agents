@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, get_type_hints
-from pydantic import BaseModel
+from typing import get_type_hints
 from PIL import Image
 from io import BytesIO
 from collections import defaultdict
@@ -9,36 +8,35 @@ import asyncio
 import numpy as np
 import cv2
 import graphviz
-from rich import print
-from src.nodes.input_queue import InputQueue
-from src.models.node import (
-    _NodeProcessor,
-    NodeProcessor,
+from nodes.engine.input_queue import NodeInputsQueue
+from nodes.models.node import (
+    _NodeOperator,
+    NodeOperator,
     NodeAttributes,
     NodeIO,
     NodeIOFlags,
     NodeIOSource,
-    NodeProcessorRouting,
-    NodeProcessorInputs,
+    NodeOperatorRouting,
+    NodeOperatorInputs,
     NodesExecutions,
 )
 
 @dataclass
 class Node:
     name: str
-    processor: NodeProcessor
+    operator: NodeOperator
     attributes: NodeAttributes = field(default_factory=NodeAttributes, repr=False)
-
+    
     def __post_init__(self):
-        self.output_schema = get_type_hints(self.processor.execute)['return']
-        self.inputs_queue: InputQueue = InputQueue(node=self)
+        self.output_schema = get_type_hints(self.operator.execute)['return']
+        self.inputs_queue: NodeInputsQueue = NodeInputsQueue(node=self)
         self.output_nodes: list[Node] = []
         self.input_nodes: list[Node] = []
         self.is_terminal: bool = True
         self.running_executions: defaultdict[str, set[str]] = defaultdict(set)
-        self._processor_fields_to_inject: set[str] = set.difference(
-            set(n.name for n in dataclasses.fields(self.processor)),
-            set(n.name for n in dataclasses.fields(_NodeProcessor))
+        self._operator_fields_to_inject: set[str] = set.difference(
+            set(n.name for n in dataclasses.fields(self.operator)),
+            set(n.name for n in dataclasses.fields(_NodeOperator))
         )
         self._init_graph_globals()
         self._assert_node_name()
@@ -93,26 +91,26 @@ class Node:
         return node
     
     async def _start(self, source: NodeIOSource, inputs: list[NodeIO]) -> list[NodeIO]:
-        processor = _NodeProcessor(
+        operator = _NodeOperator(
             node=self,
-            inputs=NodeProcessorInputs(_node=self, _inputs=inputs),
-            routing=NodeProcessorRouting(
+            inputs=NodeOperatorInputs(_node=self, _inputs=inputs),
+            routing=NodeOperatorRouting(
                 choices={n.name: n for n in self.output_nodes},
                 default_policy='all',
             ),
-            config=self.processor.config
-        ).inject_processor_fields(self._processor_fields_to_inject)
+            config=self.operator.config
+        ).inject_operator_fields(self._operator_fields_to_inject)
 
         if not all(r.flags.canceled for r in inputs):
-            processor.result = await processor.execute()
+            operator.result = await operator.execute()
             flags_canceled = False
         else:
-            processor.routing.to_none()
+            operator.routing.to_none()
             flags_canceled = True
-
+        
         output = NodeIO(
             source=source,
-            result=processor.result,
+            result=operator.result,
             flags=NodeIOFlags(canceled=flags_canceled),
         )
 
@@ -122,8 +120,8 @@ class Node:
             node.run(
                 input=NodeIO(
                     source=source,
-                    result=processor.result,
-                    flags=processor.routing._flags[node.name],
+                    result=operator.result,
+                    flags=operator.routing._flags[node.name],
                 )
             )
             for node in self.output_nodes
@@ -132,7 +130,7 @@ class Node:
             return sum(await asyncio.gather(*forward_nodes), [])
         
         return [output]
-
+    
     async def run(self, input: NodeIO) -> list[NodeIO]:
         self.inputs_queue.put(NodeIO(
             source=input.source,
@@ -141,6 +139,8 @@ class Node:
         ))
         if input.source.execution_id in self.running_executions:
             return []
+        
+        # 🔴 context manager 🔴
         self.running_executions[input.source.execution_id].add(self.name)
         
         run_inputs = await self.inputs_queue.get(input.source.execution_id)
@@ -154,5 +154,6 @@ class Node:
             inputs=run_inputs,
         )
         self.running_executions[input.source.execution_id].remove(self.name)
+        # 🔴 context manager 🔴
 
         return output

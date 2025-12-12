@@ -1,23 +1,28 @@
 import random
-from typing import ClassVar
-from src.models.node import NodeIO, NodeIOFlags, NodeProcessorConfig
-from src.nodes.node import Node, NodeProcessor, NodeIOSource
+from nodes.engine.node import Node
+from nodes.models.node import (
+    NodeIO, 
+    NodeIOFlags, 
+    NodeOperatorConfig, 
+    NodeExternalInput,
+    NodeOperator, 
+    NodeIOSource,
+)
 from dataclasses import dataclass, field
 import asyncio
 import numpy as np
 from rich import print
-from config import settings
 
 @dataclass
-class NeuronInput(NodeProcessor):
+class NeuronInput(NodeOperator):
     async def execute(self) -> float:
-        return self.inputs[settings.node.first_execution_source].result
+        return self.inputs[NodeExternalInput].result
 
 @dataclass
-class Neuron(NodeProcessor):
+class Neuron(NodeOperator):
     w: list[float]
     b: float
-    config = NodeProcessorConfig(deep_copy_fields=True)
+    config = NodeOperatorConfig(deep_copy_fields=True)
 
     async def execute(self) -> float:
         # 🔴 changing values in concurrent executions # # # #
@@ -43,19 +48,19 @@ def neuron(x: float, y: float) -> np.ndarray:
     a2[a2 < 0] = 0.
     a3 = a2 @ np.array([-1]) + np.array([1])
     a3[a3 < 0] = 0.
-    return a3
+    return a3.astype(np.float32)
     
 
 async def nn():
-    nx = Node(name="nx", processor=NeuronInput())
-    ny = Node(name="ny", processor=NeuronInput())
+    nx = Node(name="nx", operator=NeuronInput())
+    ny = Node(name="ny", operator=NeuronInput())
     
-    n11 = Node(name="n11", processor=Neuron(w=[-0.69, -0.77], b=-0.23))
-    n12 = Node(name="n12", processor=Neuron(w=[-0.26, +0.97], b=-0.29))
-    n13 = Node(name="n13", processor=Neuron(w=[+0.95, -0.19], b=-0.27))
+    n11 = Node(name="n11", operator=Neuron(w=[-0.69, -0.77], b=-0.23))
+    n12 = Node(name="n12", operator=Neuron(w=[-0.26, +0.97], b=-0.29))
+    n13 = Node(name="n13", operator=Neuron(w=[+0.95, -0.19], b=-0.27))
 
-    n21 = Node(name="n21", processor=Neuron(w=[0.93, 0.99, 0.93], b=-1.4))
-    n31 = Node(name="n31", processor=Neuron(w=[-1], b=1))
+    n21 = Node(name="n21", operator=Neuron(w=[0.93, 0.99, 0.93], b=-1.4))
+    n31 = Node(name="n31", operator=Neuron(w=[-1], b=1))
 
     nx.connect(n11)
     nx.connect(n12)

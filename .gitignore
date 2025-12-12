@@ -4,6 +4,8 @@ logs/*
 **/__pycache__/
 *local_results.json
 
+**/*.egg-info
+
 *.app
 *.exe
 *.war
