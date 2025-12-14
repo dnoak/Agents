@@ -93,7 +93,7 @@ async def main():
     t0 = time.perf_counter()
     
     batches = 1
-    runs_per_batch = 3
+    runs_per_batch = 100
     nn_architecture = [4, 10, 10, 10, 10, 10, 10, 10, 4, 10, 1, 10, 1, 10, 1]
     # nn_architecture = [2,500,500,500,500,500] # 1 mi
     
@@ -102,6 +102,7 @@ async def main():
         batches_results.append([
             r.result for r in sum(await asyncio.gather(*batch_runs(f'{i}', runs_per_batch, nn_architecture)), [])
         ])
+
 
     t1 = time.perf_counter()
 
