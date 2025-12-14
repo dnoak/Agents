@@ -81,19 +81,25 @@ class NodeOperatorRouting:
     def ended(self) -> bool:
         return not any(f.canceled for f in self._flags.values())
 
-    def add(self, node_name: str) -> bool:
-        if node_name in self.choices:
+    def add(self, node: str) -> bool:
+        if node in self.choices:
             if self._none_item_added:
                 self.to_none()
-            self._flags[node_name].canceled = False
+            self._flags[node].canceled = False
             self._none_item_added = False
             return True
         raise ValueError(
-            f'Node `{node_name}` is not in the routing choices of {list(self.choices.keys())}.'
+            f'Node `{node}` is not in the routing choices of {list(self.choices.keys())}.'
         )
 
-    def remove(self, node_name: str) -> bool:
-        raise NotImplementedError
+    def remove(self, node: str) -> bool:
+        if node in self.choices:
+            self._flags[node].canceled = True
+            return True
+        raise ValueError(
+            f'Node `{node}` is not in the routing choices of {list(self.choices.keys())}.'
+        )
+        
 
     def to_all(self):
         "Send to all the nodes"
