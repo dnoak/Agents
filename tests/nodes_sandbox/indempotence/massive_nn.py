@@ -1,7 +1,7 @@
 import random
 import time
 from typing import ClassVar
-from nodesio.models.node import NodeIO, NodeIOStatus, NodeOperatorConfig, NodeExternalInput, NodeOperator, NodeIOSource
+from nodesio.models.node import NodeIO, NodeIOStatus, NodeExecutorConfig, NodeExternalInput, NodeIOSource
 from nodesio.engine.node import Node
 from dataclasses import dataclass, field
 import asyncio
@@ -10,15 +10,15 @@ from rich import print
 from itertools import combinations
 
 @dataclass
-class NeuronInput(NodeOperator):
+class NeuronInput(Node):
     async def execute(self) -> float:
         return self.inputs[NodeExternalInput].result
 
 @dataclass
-class Neuron(NodeOperator):
+class Neuron(Node):
     w: np.ndarray
     b: float
-    config = NodeOperatorConfig(deep_copy_fields=True)
+    config = NodeExecutorConfig(deep_copy_fields=True)
 
     async def execute(self) -> float:
         # await asyncio.sleep(random.random())
@@ -43,23 +43,21 @@ def neuron(x: float, y: float) -> np.ndarray:
     a3[a3 < 0] = 0.
     return a3
 
-def mlp_generator(label: str, architecture: list[int]) -> list[list[Node]]:
+def mlp_generator(label: str, architecture: list[int]) -> list[list[Neuron] | list[NeuronInput]]:
     global NEURON
     inputs = [
-        Node(name=f"{label}_input_{i}", operator=NeuronInput())
+        NeuronInput(name=f"{label}_input_{i}")
         for i in range(architecture[0])
     ]
-    layers: list[list[Node]] = []
+    layers: list[list[Neuron] | list[NeuronInput]] = []
     for layer_index, layer_size in enumerate(architecture[1:]):
         layer = []
         for neuron_index in range(layer_size):
             layer.append(
-                Node(
+                Neuron(
                     name=f"{label}_L{layer_index}_N{neuron_index}", 
-                    operator=Neuron(
-                        w=np.random.rand(architecture[layer_index]), 
-                        b=random.randint(0, 1)
-                    )
+                    w=np.random.rand(architecture[layer_index]), 
+                    b=random.randint(0, 1)
                 )
             )
         layers.append(layer)
@@ -96,9 +94,9 @@ async def main():
     global NEURON
     
     batches = 1
-    runs_per_batch = 100
-    nn_architecture = [4, 10, 10, 10, 10, 10, 10, 10, 4, 10, 1, 10, 1, 10, 1]
-    # nn_architecture = [4, 5, 5, 5, 5, 1]
+    runs_per_batch = 200
+    # nn_architecture = [4, 10, 10, 10, 10, 10, 10, 10, 4, 10, 1, 10, 1, 10, 1]
+    nn_architecture = [4, 5, 5, 5, 5, 1]
     # nn_architecture = [2,500,500,500,500,500] # 1 mi
     
     batches_results = []
@@ -126,13 +124,6 @@ async def main():
     total_connections = total_node_runs * sum(a*b for a, b in zip(nn_architecture, nn_architecture[1:]))
     total_time = sum(batches_times)
     
-    np_total_runs = batches * runs_per_batch
-    np_total_node_runs = sum(nn_architecture[1:]) * np_total_runs
-    np_t0_benchmark = time.perf_counter()
-    np_benchmark_results = [np_execute_benchmark(512) for _ in range(np_total_runs)]
-    np_t1_benchmark = time.perf_counter()
-    np_total_time = np_t1_benchmark - np_t0_benchmark
-
     print(f'🟢 NN Consistency Test Passed')
     print(f'Total runs: {total_runs}')
     print(f'Total node runs: {total_node_runs}')
@@ -140,13 +131,6 @@ async def main():
     print(f'Total Time: {total_time}')
     print(f'Time per run: {(total_time) / total_runs}')
     print(f'Time per node: {(total_time) / total_node_runs}')
-    print(f'----------------------')
-    print(f'(numpy) Total runs: {np_total_runs}')
-    print(f'(numpy) Total nodes: {np_total_node_runs}')
-    print(f'(numpy) Total Time: {np_total_time}')
-    print(f'(numpy) Time per node: {(np_total_time) / np_total_node_runs}')
-    
 
-    
 
 asyncio.run(main())

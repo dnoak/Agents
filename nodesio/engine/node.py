@@ -1,7 +1,8 @@
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 import time
-from typing import get_type_hints
+from typing import Any, get_type_hints
 from PIL import Image
 from io import BytesIO
 from collections import defaultdict
@@ -12,59 +13,67 @@ import cv2
 import graphviz
 from nodesio.engine.input_queue import NodeInputsQueue
 from nodesio.models.node import (
-    _NodeOperator,
-    NodeOperator,
+    _NodeExecutor,
+    # NodeExecutor,
     NodeAttributes,
     NodeIO,
     NodeIOStatus,
     NodeIOSource,
-    NodeOperatorRouting,
-    NodeOperatorInputs,
+    NodeExecutorRouting,
+    NodeExecutorInputs,
     NodesExecutions,
+    NodeExecutorConfig,
 )
 
 @dataclass
-class Node:
-    name: str
-    operator: NodeOperator
-    attributes: NodeAttributes = field(default_factory=NodeAttributes, repr=False)
+class Node(ABC):
+    name: str = field(kw_only=True)
+    config: NodeExecutorConfig = field(default_factory=NodeExecutorConfig, repr=False, kw_only=True)
+    attributes: NodeAttributes = field(default_factory=NodeAttributes, repr=False, kw_only=True)
+    inputs: NodeExecutorInputs = field(init=False, repr=False)
+    executions: dict[str, NodeIO] = field(init=False, repr=False)
+    routing: NodeExecutorRouting = field(init=False, repr=False)
     
     def __post_init__(self):
-        self.output_schema = get_type_hints(self.operator.execute)['return']
-        self.inputs_queue: NodeInputsQueue = NodeInputsQueue(node=self)
-        self.output_nodes: list[Node] = []
-        self.input_nodes: list[Node] = []
+        self._output_schema = get_type_hints(self.execute)['return']
+        self._inputs_queue: NodeInputsQueue = NodeInputsQueue(node=self)
+        self._output_nodes: list[Node] = []
+        self._input_nodes: list[Node] = []
         self.is_terminal: bool = True
-        self.running_executions: defaultdict[str, set[str]] = defaultdict(set)
+        self._running_executions: defaultdict[str, set[str]] = defaultdict(set)
         self._operator_fields_to_inject: set[str] = set.difference(
-            set(n.name for n in dataclasses.fields(self.operator)),
-            set(n.name for n in dataclasses.fields(_NodeOperator))
+            set(n.name for n in dataclasses.fields(self)),
+            set(n.name for n in dataclasses.fields(_NodeExecutor))
         )
         self._init_graph_globals()
         self._assert_node_name()
+    
+    @abstractmethod
+    async def execute(self) -> Any:
+        ...
 
     def _init_graph_globals(self):
         if not hasattr(Node, 'names'):
-            Node.names = []
+            Node._names = []
         if not hasattr(Node, 'executions'):
-            Node.executions: NodesExecutions = NodesExecutions()
+            Node._executions: NodesExecutions = NodesExecutions()
         if not hasattr(Node, 'graph'):
-            Node.graph = graphviz.Digraph(graph_attr=self.attributes.digraph_graph)
+            Node._graph = graphviz.Digraph(graph_attr=self.attributes.digraph_graph)
         if not hasattr(Node, 'metrics'):
             Node.metrics = defaultdict(float)
-        Node.graph.node(
+        Node._graph.node(
             name=self.name,
             label=self.attributes.node_label(
                 self.name, 
-                self.output_schema,
+                self._output_schema,
             ), 
             **self.attributes.digraph_node,
         )
     
     def _assert_node_name(self):
-        if self.name in Node.names:
-            raise ValueError(f'Agent name `{self.name}` already exists')
-        Node.names.append(self.name)
+        if self.name in Node._names:
+            raise ValueError(f'Node name `{self.name}` already exists')
+        Node._names.append(self.name)
 
     @contextmanager
     def timer(self, name='str'):
@@ -75,21 +84,20 @@ class Node:
     
     @contextmanager
     def execution_running(self, execution_id='str'):
-        self.running_executions[execution_id].add(self.name)
+        self._running_executions[execution_id].add(self.name)
         yield
-        self.running_executions[execution_id].remove(self.name)
+        self._running_executions[execution_id].remove(self.name)
 
-    def plot(self, animate: bool = False):
-        if not animate:
-            return Image.open(BytesIO(Node.graph.pipe(format='png'))).show()
+    def plot(self):
+        return Image.open(BytesIO(Node._graph.pipe(format='png'))).show()
 
     def connect(self, node: 'Node'):
         self.is_terminal = False
-        self.output_nodes.append(node)
-        node.inputs_queue.sort_order.append(self.name)
-        node.input_nodes.append(self)
+        self._output_nodes.append(node)
+        node._inputs_queue.sort_order.append(self.name)
+        node._input_nodes.append(self)
         attributes = self.attributes.edge()
-        Node.graph.edge(
+        Node._graph.edge(
             tail_name=self.name,
             head_name=node.name, 
             **attributes
@@ -97,48 +105,42 @@ class Node:
         return node
     
     async def _start(self, source: NodeIOSource, inputs: list[NodeIO]) -> list[NodeIO]:
-        operator = _NodeOperator(
+        executor = _NodeExecutor(
             node=self,
-            inputs=NodeOperatorInputs(_node=self, _inputs=inputs),
-            routing=NodeOperatorRouting(
-                choices={n.name: n for n in self.output_nodes},
+            inputs=NodeExecutorInputs(_node=self, _inputs=inputs),
+            executions=Node._executions[source.execution_id],
+            routing=NodeExecutorRouting(
+                choices={n.name: n for n in self._output_nodes},
                 default_policy='broadcast',
                 _node_status={}
             ),
-            config=self.operator.config
-        ).inject_operator_fields(self._operator_fields_to_inject)
-
-        # if not all(r.flags.canceled for r in inputs):
-        #     operator.result = await operator.execute()
-        #     flags_canceled = False
-        # else:
-        #     operator.routing.clear()
-        #     flags_canceled = True
+            config=self.config
+        ).inject_executor_fields(self._operator_fields_to_inject)
 
         if any(r.status.execution == 'success' for r in inputs):
-            operator.result = await operator.execute()
+            executor.result = await executor.execute()
             execution_status = 'success'
         else:
-            operator.routing.clear()
+            executor.routing.clear()
             execution_status = 'skipped'
 
         output = NodeIO(
             source=source,
-            result=operator.result,
+            result=executor.result,
             status=NodeIOStatus(execution=execution_status, message=''),
         )
 
-        Node.executions.insert(output)
+        Node._executions[source.execution_id] = output
 
         forward_nodes = [
             node.run(
                 input=NodeIO(
                     source=source,
-                    result=operator.result,
-                    status=operator.routing._node_status[node.name],
+                    result=executor.result,
+                    status=executor.routing._node_status[node.name],
                 )
             )
-            for node in self.output_nodes
+            for node in self._output_nodes
         ]
 
         if forward_nodes:
@@ -147,17 +149,17 @@ class Node:
         return [output]
     
     async def run(self, input: NodeIO) -> list[NodeIO]:
-        self.inputs_queue.put(NodeIO(
+        self._inputs_queue.put(NodeIO(
             source=input.source,
             result=input.result,
             status=input.status,
         ))
         
-        if input.source.execution_id in self.running_executions:
+        if input.source.execution_id in self._running_executions:
             return []
         
         with self.execution_running(execution_id=input.source.execution_id):
-            run_inputs = await self.inputs_queue.get(input.source.execution_id)
+            run_inputs = await self._inputs_queue.get(input.source.execution_id)
             output = await self._start(
                 source=NodeIOSource(
                     id=input.source.id, 

@@ -27,7 +27,7 @@ class NodeInputsQueue:
         first_execution = input.source.execution_id not in self.pending
         if first_execution:
             self.required_inputs[input.source.execution_id] = {
-                node.name for node in self.node.input_nodes
+                node.name for node in self.node._input_nodes
                 if node.name != self.node.name
             }
             self.futures[input.source.execution_id] = asyncio.get_running_loop().create_future()
