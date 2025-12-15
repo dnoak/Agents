@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from collections import defaultdict
 from typing import TYPE_CHECKING
-from nodes.models.node import NodeIO
+from nodesio.models.node import NodeIO
 if TYPE_CHECKING:
-    from nodes.engine.node import Node
+    from nodesio.engine.node import Node
 import asyncio
 
 @dataclass
@@ -30,9 +30,9 @@ class NodeInputsQueue:
                 node.name for node in self.node.input_nodes
                 if node.name != self.node.name
             }
-            self.futures[input.source.execution_id] = asyncio.get_event_loop().create_future()
+            self.futures[input.source.execution_id] = asyncio.get_running_loop().create_future()
         
-        if input.flags.canceled:
+        if input.status.execution != 'success':
             self.required_inputs[input.source.execution_id].remove(input.source.node.name)
         
         self.pending[input.source.execution_id][input.source.node.name] = input
@@ -48,5 +48,6 @@ class NodeInputsQueue:
         result = self.futures.pop(execution_id).result()
         if len(result) == 1:
             return result
+        
         return sorted(result, key=lambda x: self.sort_order.index(x.source.node.name))
         

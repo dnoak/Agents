@@ -1,8 +1,8 @@
 import random
 import time
 from typing import ClassVar
-from nodes.models.node import NodeIO, NodeIOFlags, NodeOperatorConfig, NodeExternalInput, NodeOperator, NodeIOSource
-from nodes.engine.node import Node
+from nodesio.models.node import NodeIO, NodeIOStatus, NodeOperatorConfig, NodeExternalInput, NodeOperator, NodeIOSource
+from nodesio.engine.node import Node
 from dataclasses import dataclass, field
 import asyncio
 import numpy as np
@@ -21,14 +21,15 @@ class Neuron(NodeOperator):
     config = NodeOperatorConfig(deep_copy_fields=True)
 
     async def execute(self) -> float:
+        # await asyncio.sleep(random.random())
         x = np.array(self.inputs.results)
         z = x @ self.w + self.b
         a = max(z, 0.)
         return float(a)
     
-def np_execute_benchmark() -> float:
-    w = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], dtype=np.float32)
-    x = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], dtype=np.float32)
+def np_execute_benchmark(size: int) -> float:
+    w = np.array(np.random.rand(size), dtype=np.float32)
+    x = np.array(np.random.rand(size), dtype=np.float32)
     z = x.T @ w + 0.123
     a = max(z, 0.)
     return float(a)
@@ -43,6 +44,7 @@ def neuron(x: float, y: float) -> np.ndarray:
     return a3
 
 def mlp_generator(label: str, architecture: list[int]) -> list[list[Node]]:
+    global NEURON
     inputs = [
         Node(name=f"{label}_input_{i}", operator=NeuronInput())
         for i in range(architecture[0])
@@ -53,7 +55,7 @@ def mlp_generator(label: str, architecture: list[int]) -> list[list[Node]]:
         for neuron_index in range(layer_size):
             layer.append(
                 Node(
-                    name=f"{label}_L{layer_index}_N{neuron_index})", 
+                    name=f"{label}_L{layer_index}_N{neuron_index}", 
                     operator=Neuron(
                         w=np.random.rand(architecture[layer_index]), 
                         b=random.randint(0, 1)
@@ -66,6 +68,7 @@ def mlp_generator(label: str, architecture: list[int]) -> list[list[Node]]:
         for current_neuron in current_layer:
             for next_neuron in next_layer:
                 current_neuron.connect(next_neuron)
+    NEURON = layers[-1][-1]
     return layers
 
 def batch_runs(label: str, runs: int, nn_architecture: list[int]):
@@ -78,33 +81,39 @@ def batch_runs(label: str, runs: int, nn_architecture: list[int]):
             multiple_runs.append(input.run(NodeIO(
                 source=NodeIOSource(id=f'user_nn', execution_id=f'nn', node=None),
                 result=random.uniform(-1, 1),
-                flags=NodeIOFlags(),
+                status=NodeIOStatus(),
             )))
     
     random.seed(int(label))
     np.random.seed(int(label))
     random.shuffle(multiple_runs)
 
-    # mlp[0][0].plot()
+    # print(mlp[0][0].metrics)
 
     return multiple_runs
 
 async def main():
-    t0 = time.perf_counter()
+    global NEURON
     
     batches = 1
     runs_per_batch = 100
     nn_architecture = [4, 10, 10, 10, 10, 10, 10, 10, 4, 10, 1, 10, 1, 10, 1]
+    # nn_architecture = [4, 5, 5, 5, 5, 1]
     # nn_architecture = [2,500,500,500,500,500] # 1 mi
     
     batches_results = []
-    for i in range(batches):
+    batches_times = []
+    for b in range(batches):
+        batches_runs = batch_runs(f'{b}', runs_per_batch, nn_architecture)
+        
+        t0 = time.perf_counter()
         batches_results.append([
-            r.result for r in sum(await asyncio.gather(*batch_runs(f'{i}', runs_per_batch, nn_architecture)), [])
+            r.result for r in sum(await asyncio.gather(*batches_runs), [])
         ])
+        t1 = time.perf_counter()
+        batches_times.append(t1 - t0)
 
-
-    t1 = time.perf_counter()
+        print(f'Batch {b} took {t1 - t0} seconds')
 
     for pair in combinations(batches_results, 2):
         assert len(pair) == 2
@@ -115,12 +124,12 @@ async def main():
     total_runs = batches * runs_per_batch
     total_node_runs = sum(nn_architecture) * total_runs
     total_connections = total_node_runs * sum(a*b for a, b in zip(nn_architecture, nn_architecture[1:]))
-    total_time = t1 - t0
+    total_time = sum(batches_times)
     
     np_total_runs = batches * runs_per_batch
     np_total_node_runs = sum(nn_architecture[1:]) * np_total_runs
     np_t0_benchmark = time.perf_counter()
-    np_benchmark_results = [np_execute_benchmark() for _ in range(np_total_runs)]
+    np_benchmark_results = [np_execute_benchmark(512) for _ in range(np_total_runs)]
     np_t1_benchmark = time.perf_counter()
     np_total_time = np_t1_benchmark - np_t0_benchmark
 

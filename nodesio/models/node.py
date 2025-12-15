@@ -6,14 +6,14 @@ from types import MethodType
 from abc import ABC
 from dataclasses import dataclass
 if TYPE_CHECKING:
-    from nodes.engine.node import Node
+    from nodesio.engine.node import Node
 
 NodeExternalInput = '__input__'
 
 @dataclass
-class NodeIOFlags:
-    canceled: bool = False
-    error: bool = False
+class NodeIOStatus:
+    execution: Literal['success', 'skipped', 'failed'] = 'success'
+    message: str = ''
 
 @dataclass
 class NodeIOSource:
@@ -25,7 +25,7 @@ class NodeIOSource:
 class NodeIO:
     source: NodeIOSource
     result: Any
-    flags: NodeIOFlags
+    status: NodeIOStatus
 
 @dataclass
 class NotProcessed:
@@ -62,52 +62,52 @@ class NodeOperatorInputs:
     def results(self) -> list[Any]:
         return [
             i.result for i in self._dict_inputs.values()
-            if i.flags.canceled is False
+            if i.status.execution == 'success'
         ]
 
 @dataclass
 class NodeOperatorRouting:
     choices: dict[str, 'Node']
-    default_policy: Literal['all', 'none']
-    _flags: dict[str, NodeIOFlags] = field(init=False)
-
+    default_policy: Literal['broadcast', 'skip']
+    _node_status: dict[str, NodeIOStatus]
+    
     def __post_init__(self):
         self._none_item_added = True
-        if self.default_policy == 'all':
-            self.to_all()
-        elif self.default_policy == 'none':
-            self.to_none()
+        if self.default_policy == 'broadcast':
+            self._node_status = {k: NodeIOStatus(execution='success') for k in self.choices.keys()}
+        elif self.default_policy == 'skip':
+            self._node_status = {k: NodeIOStatus(execution='skipped') for k in self.choices.keys()}
+        else:
+            raise ValueError(f'Invalid routing default policy `{self.default_policy}`')
 
-    def ended(self) -> bool:
-        return not any(f.canceled for f in self._flags.values())
-
-    def add(self, node: str) -> bool:
+    def forward(self, node: str) -> bool:
         if node in self.choices:
             if self._none_item_added:
-                self.to_none()
-            self._flags[node].canceled = False
+                self.clear()
+            self._node_status[node].execution = 'success'
             self._none_item_added = False
             return True
         raise ValueError(
             f'Node `{node}` is not in the routing choices of {list(self.choices.keys())}.'
         )
-
-    def remove(self, node: str) -> bool:
+    
+    def skip(self, node: str) -> bool:
         if node in self.choices:
-            self._flags[node].canceled = True
+            self._node_status[node].execution = 'skipped'
             return True
         raise ValueError(
             f'Node `{node}` is not in the routing choices of {list(self.choices.keys())}.'
         )
-        
 
-    def to_all(self):
-        "Send to all the nodes"
-        self._flags = {k: NodeIOFlags(canceled=False) for k in self.choices.keys()}
+    def broadcast(self) -> None:
+        "Broadcast to all the nodes"
+        for node in self.choices:
+            self._node_status[node].execution = 'success'
     
-    def to_none(self):
-        "Remove all the nodes (terminal state for this node)"
-        self._flags = {k: NodeIOFlags(canceled=True) for k in self.choices.keys()}
+    def clear(self):
+        "Skip all the nodes (terminal state for this node)"
+        for node in self.choices:
+            self._node_status[node].execution = 'skipped'
 
 @dataclass
 class _NodeOperator:
