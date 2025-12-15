@@ -35,16 +35,17 @@ class Node(ABC):
     routing: NodeExecutorRouting = field(init=False, repr=False)
     
     def __post_init__(self):
+        print(self.attributes)
         self._output_schema = get_type_hints(self.execute)['return']
         self._inputs_queue: NodeInputsQueue = NodeInputsQueue(node=self)
         self._output_nodes: list[Node] = []
         self._input_nodes: list[Node] = []
-        self.is_terminal: bool = True
         self._running_executions: defaultdict[str, set[str]] = defaultdict(set)
         self._operator_fields_to_inject: set[str] = set.difference(
             set(n.name for n in dataclasses.fields(self)),
             set(n.name for n in dataclasses.fields(_NodeExecutor))
         )
+        self.is_terminal: bool = True
         self._init_graph_globals()
         self._assert_node_name()
     
@@ -53,14 +54,14 @@ class Node(ABC):
         ...
 
     def _init_graph_globals(self):
-        if not hasattr(Node, 'names'):
+        if not hasattr(Node, '_names'):
             Node._names = []
-        if not hasattr(Node, 'executions'):
+        if not hasattr(Node, '_executions'):
             Node._executions: NodesExecutions = NodesExecutions()
-        if not hasattr(Node, 'graph'):
+        if not hasattr(Node, '_graph'):
             Node._graph = graphviz.Digraph(graph_attr=self.attributes.digraph_graph)
-        if not hasattr(Node, 'metrics'):
-            Node.metrics = defaultdict(float)
+        if not hasattr(Node, '_metrics'):
+            Node._metrics = defaultdict(float)
         Node._graph.node(
             name=self.name,
             label=self.attributes.node_label(
@@ -80,7 +81,7 @@ class Node(ABC):
         t0 = time.perf_counter()
         yield
         t1 = time.perf_counter()
-        Node.metrics[name] += (t1 - t0)
+        Node._metrics[name] += (t1 - t0)
     
     @contextmanager
     def execution_running(self, execution_id='str'):
@@ -88,19 +89,19 @@ class Node(ABC):
         yield
         self._running_executions[execution_id].remove(self.name)
 
-    def plot(self):
-        return Image.open(BytesIO(Node._graph.pipe(format='png'))).show()
-
+    def plot(self, sleep: float = 0.1):
+        Image.open(BytesIO(Node._graph.pipe(format='png'))).show(title=f'{self.name} executions')
+        time.sleep(sleep)
+    
     def connect(self, node: 'Node'):
         self.is_terminal = False
         self._output_nodes.append(node)
         node._inputs_queue.sort_order.append(self.name)
         node._input_nodes.append(self)
-        attributes = self.attributes.edge()
         Node._graph.edge(
             tail_name=self.name,
             head_name=node.name, 
-            **attributes
+            **self.attributes.edge()
         )
         return node
     

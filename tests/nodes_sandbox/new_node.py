@@ -1,7 +1,8 @@
 import asyncio
 from dataclasses import dataclass, field
+import time
 from nodesio.engine.node import Node
-from nodesio.models.node import NodeIO, NodeIOStatus, NodeIOSource, NodeOperatorConfig
+from nodesio.models.node import NodeIO, NodeIOStatus, NodeIOSource, NodeExecutorConfig
 from rich import print
 
 @dataclass
@@ -9,16 +10,30 @@ class Alphabet(Node):
     rere: str
 
     async def execute(self) -> str:
-        print(self.name)
+        if self.name == 'd':
+            self.routing.clear()
         return 'Hello world!'
-    
 
-a = Alphabet('rere', name='a', config=NodeOperatorConfig(deep_copy_fields=True))
+a = Alphabet(name='a', rere='rere', config=NodeExecutorConfig(deep_copy_fields=True))
 b = Alphabet(name='b', rere='rere')
 c = Alphabet(name='c', rere='rere')
+d = Alphabet(name='d', rere='rere')
+e = Alphabet(name='e', rere='rere')
+f = Alphabet(name='f', rere='rere')
+g = Alphabet(name='g', rere='rere')
 
 a.connect(b)
-a.connect(c)
+b.connect(c)
+a.connect(d)
+d.connect(e)
+d.connect(f)
+g.connect(g)
+e.connect(g)
+f.connect(g)
+# g.connect(g)
+
+a.plot()
+
 
 print(a.config)
 print(b.config)

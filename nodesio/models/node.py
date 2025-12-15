@@ -180,7 +180,7 @@ class NodeAttributes:
         }
     
     @property
-    def digraph_node(cls) -> dict:
+    def digraph_node(self) -> dict:
         return {
             'shape': 'plaintext',
             'color': '#e6e6e6'  
