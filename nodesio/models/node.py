@@ -11,10 +11,6 @@ if TYPE_CHECKING:
 NodeExternalInput = '__input__'
 
 @dataclass
-class NodeExecutorConfig:
-    deep_copy_fields: bool = False
-
-@dataclass
 class NodeIOStatus:
     execution: Literal['success', 'skipped', 'failed'] = 'success'
     message: str = ''
@@ -124,7 +120,11 @@ class NodesExecutions:
         self._executions[execution_id][node_output.source.node.name] = node_output # type: ignore
 
 @dataclass
-class _NodeExecutor:
+class NodeExecutorConfig:
+    deep_copy_fields: bool = False
+
+@dataclass
+class NodeExecutor:
     node: 'Node'
     inputs: NodeExecutorInputs
     executions: dict[str, NodeIO]
@@ -144,7 +144,7 @@ class _NodeExecutor:
     def _set_attr_deepcopy(self, field: str):
         setattr(self, field, copy.deepcopy(getattr(self.node, field)))
     
-    def inject_executor_fields(self, fields: set[str]) -> '_NodeExecutor':
+    def inject_executor_fields(self, fields: set[str]) -> 'NodeExecutor':
         if self.node is None:
             return self
         for f in fields:
@@ -154,21 +154,6 @@ class _NodeExecutor:
     
     async def execute(self) -> Any:
         raise NotImplementedError('Replace this method with your own logic')
-
-# @dataclass(kw_only=True)
-# class NodeExecutor(ABC):
-#     node: 'Node' = field(init=False, repr=False)
-#     inputs: NodeExecutorInputs = field(init=False, repr=False)
-#     executions: dict[str, NodeIO] = field(init=False, repr=False)
-#     routing: NodeExecutorRouting = field(init=False, repr=False)
-#     config: NodeExecutorConfig = field(init=False, repr=False)
-
-#     def __post_init__(self):
-#         self.config = getattr(self, 'config', NodeExecutorConfig())
-    
-#     @abstractmethod
-#     async def execute(self) -> Any:
-#         ...
 
 
 class NodeAttributes:

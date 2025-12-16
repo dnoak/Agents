@@ -8,13 +8,14 @@ from rich import print
 @dataclass
 class Alphabet(Node):
     rere: str
+    config = NodeExecutorConfig(deep_copy_fields=True)
 
     async def execute(self) -> str:
         if self.name == 'd':
             self.routing.clear()
         return 'Hello world!'
 
-a = Alphabet(name='a', rere='rere', config=NodeExecutorConfig(deep_copy_fields=True))
+a = Alphabet(name='a', rere='rere')
 b = Alphabet(name='b', rere='rere')
 c = Alphabet(name='c', rere='rere')
 d = Alphabet(name='d', rere='rere')
@@ -27,13 +28,10 @@ b.connect(c)
 a.connect(d)
 d.connect(e)
 d.connect(f)
-g.connect(g)
 e.connect(g)
 f.connect(g)
-# g.connect(g)
 
 a.plot()
-
 
 print(a.config)
 print(b.config)

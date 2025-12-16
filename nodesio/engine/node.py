@@ -13,8 +13,7 @@ import cv2
 import graphviz
 from nodesio.engine.input_queue import NodeInputsQueue
 from nodesio.models.node import (
-    _NodeExecutor,
-    # NodeExecutor,
+    NodeExecutor,
     NodeAttributes,
     NodeIO,
     NodeIOStatus,
@@ -28,14 +27,13 @@ from nodesio.models.node import (
 @dataclass
 class Node(ABC):
     name: str = field(kw_only=True)
-    config: NodeExecutorConfig = field(default_factory=NodeExecutorConfig, repr=False, kw_only=True)
-    attributes: NodeAttributes = field(default_factory=NodeAttributes, repr=False, kw_only=True)
+    config: NodeExecutorConfig = field(init=False, repr=False, kw_only=True)
+    attributes: NodeAttributes = field(init=False, repr=False, kw_only=True)
     inputs: NodeExecutorInputs = field(init=False, repr=False)
     executions: dict[str, NodeIO] = field(init=False, repr=False)
     routing: NodeExecutorRouting = field(init=False, repr=False)
     
     def __post_init__(self):
-        print(self.attributes)
         self._output_schema = get_type_hints(self.execute)['return']
         self._inputs_queue: NodeInputsQueue = NodeInputsQueue(node=self)
         self._output_nodes: list[Node] = []
@@ -43,9 +41,10 @@ class Node(ABC):
         self._running_executions: defaultdict[str, set[str]] = defaultdict(set)
         self._operator_fields_to_inject: set[str] = set.difference(
             set(n.name for n in dataclasses.fields(self)),
-            set(n.name for n in dataclasses.fields(_NodeExecutor))
+            set(n.name for n in dataclasses.fields(NodeExecutor))
         )
         self.is_terminal: bool = True
+        self._set_defaults()
         self._init_graph_globals()
         self._assert_node_name()
     
@@ -76,6 +75,12 @@ class Node(ABC):
             raise ValueError(f'Node name `{self.name}` already exists')
         Node._names.append(self.name)
 
+    def _set_defaults(self):
+        if not hasattr(self, 'config'):
+            self.config = NodeExecutorConfig()
+        if not hasattr(self, 'attributes'):
+            self.attributes = NodeAttributes()
+    
     @contextmanager
     def timer(self, name='str'):
         t0 = time.perf_counter()
@@ -106,7 +111,7 @@ class Node(ABC):
         return node
     
     async def _start(self, source: NodeIOSource, inputs: list[NodeIO]) -> list[NodeIO]:
-        executor = _NodeExecutor(
+        executor = NodeExecutor(
             node=self,
             inputs=NodeExecutorInputs(_node=self, _inputs=inputs),
             executions=Node._executions[source.execution_id],

@@ -1,11 +1,10 @@
 import random
-from nodes.engine.node import Node
-from nodes.models.node import (
+from nodesio.engine.node import Node
+from nodesio.models.node import (
     NodeIO, 
-    NodeIOFlags, 
-    NodeOperatorConfig, 
+    NodeIOStatus, 
+    NodeExecutorConfig, 
     NodeExternalInput,
-    NodeOperator, 
     NodeIOSource,
 )
 from dataclasses import dataclass, field
@@ -14,33 +13,33 @@ import numpy as np
 from rich import print
 
 @dataclass
-class NeuronInput(NodeOperator):
+class NeuronInput(Node):
     async def execute(self) -> float:
         return self.inputs[NodeExternalInput].result
 
 @dataclass
-class Neuron(NodeOperator):
+class Neuron(Node):
     w: list[float]
     b: float
-    config = NodeOperatorConfig(deep_copy_fields=True)
+    config = NodeExecutorConfig(deep_copy_fields=True)
 
     async def execute(self) -> float:
-        # 🔴 changing values in concurrent executions # # # #
+        # 🔴 changing values in concurrent executions #
         b = self.b
         w0 = self.w[0]
         self.b = -100
         self.w[0] = -100
         # 🟡 randomizing processor order
-        await asyncio.sleep(random.uniform(0, 0.1))
+        await asyncio.sleep(random.uniform(0, 0.2))
         self.b = b
         self.w[0] = w0
-        # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        # # # # # # # # # # # # # # # # # # # # # # #
 
         x = np.array(self.inputs.results)
         z = x @ self.w + self.b
         a = max(z, 0.)
         return float(a)
-    
+
 def neuron(x: float, y: float) -> np.ndarray:
     a1 = np.array([[x, y]]) @ np.array([[-0.69, -0.77], [-0.26, +0.97], [+0.95, -0.19]]).T + np.array([-0.23, -0.29, -0.27])
     a1[a1 < 0] = 0.
@@ -49,18 +48,17 @@ def neuron(x: float, y: float) -> np.ndarray:
     a3 = a2 @ np.array([-1]) + np.array([1])
     a3[a3 < 0] = 0.
     return a3.astype(np.float32)
-    
 
-async def nn():
-    nx = Node(name="nx", operator=NeuronInput())
-    ny = Node(name="ny", operator=NeuronInput())
+def nn():
+    nx = NeuronInput(name="nx")
+    ny = NeuronInput(name="ny")
     
-    n11 = Node(name="n11", operator=Neuron(w=[-0.69, -0.77], b=-0.23))
-    n12 = Node(name="n12", operator=Neuron(w=[-0.26, +0.97], b=-0.29))
-    n13 = Node(name="n13", operator=Neuron(w=[+0.95, -0.19], b=-0.27))
+    n11 = Neuron(name="n11", w=[-0.69, -0.77], b=-0.23)
+    n12 = Neuron(name="n12", w=[-0.26, +0.97], b=-0.29)
+    n13 = Neuron(name="n13", w=[+0.95, -0.19], b=-0.27)
 
-    n21 = Node(name="n21", operator=Neuron(w=[0.93, 0.99, 0.93], b=-1.4))
-    n31 = Node(name="n31", operator=Neuron(w=[-1], b=1))
+    n21 = Neuron(name="n21", w=[0.93, 0.99, 0.93], b=-1.4)
+    n31 = Neuron(name="n31", w=[-1], b=1)
 
     nx.connect(n11)
     nx.connect(n12)
@@ -74,9 +72,14 @@ async def nn():
     n13.connect(n21)
     
     n21.connect(n31)
-    # nx.plot()
+    
+    return nx, ny
+    
+async def main():
 
-    xy = [(round(random.uniform(-4, 4),2), round(random.uniform(-4, 4),2)) for _ in range(200)]
+    nx, ny = nn()
+
+    xy = [(round(random.uniform(-4, 4),2), round(random.uniform(-4, 4),2)) for _ in range(100)]
     outputs = []
     real_outputs = []
     for i, (x, y) in enumerate(xy):
@@ -84,12 +87,12 @@ async def nn():
             nx.run(NodeIO(
                 source=NodeIOSource(id=f'user_nn{i}', execution_id=f'{i}', node=None),
                 result=x,
-                flags=NodeIOFlags(),
+                status=NodeIOStatus(),
             )),
             ny.run(NodeIO(
                 source=NodeIOSource(id=f'user_nn{i}', execution_id=f'{i}', node=None),
                 result=y,
-                flags=NodeIOFlags(),
+                status=NodeIOStatus(),
             )),
         ]
         outputs += inputs
@@ -101,18 +104,21 @@ async def nn():
     node_outputs: list[NodeIO] = sum(await asyncio.gather(*outputs), [])
     node_outputs.sort(key=lambda x: int(x.source.execution_id))
 
+    print(node_outputs)
+
     for (x, y), real_output, node_output in zip(xy, real_outputs, node_outputs):
+        assert {node_output.source.execution_id} == set(
+            e.source.execution_id for e in
+            nx._executions[node_output.source.execution_id].values()
+        )
+        assert real_output == node_output.result, f'real: {real_output}, nodes: {node_output.result}'
+        
         print(f'exec_id: {node_output.source.execution_id}')
         print(f'x: {x}, y: {y}')
         print(f'real : {real_output}')
         print(f'nodes: {node_output.result}')
         print()
-
-        assert {node_output.source.execution_id} == set(
-            e.source.execution_id for e in 
-            nx.executions.get(node_output.source.execution_id).values()
-        )
-        assert real_output == node_output.result
+        
 
 
-asyncio.run(nn())
+asyncio.run(main())
