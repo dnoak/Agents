@@ -30,10 +30,11 @@ d.connect(e)
 d.connect(f)
 e.connect(g)
 f.connect(g)
+# g.connect(d)
 
-a.plot()
+# a.plot(sleep=0.5)
 
-print(a.config)
+print(a._input_nodes)
 print(b.config)
 print(c.config)
 

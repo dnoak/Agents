@@ -1,16 +1,14 @@
-from abc import ABC, abstractmethod
-from contextlib import contextmanager
 from dataclasses import dataclass, field
-import time
 from typing import Any, get_type_hints
-from PIL import Image
-from io import BytesIO
+from contextlib import contextmanager
 from collections import defaultdict
+from abc import ABC, abstractmethod
+from io import BytesIO
+from PIL import Image
 import dataclasses
 import asyncio
-import numpy as np
-import cv2
 import graphviz
+import time
 from nodesio.engine.input_queue import NodeInputsQueue
 from nodesio.models.node import (
     NodeExecutor,

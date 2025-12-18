@@ -21,7 +21,6 @@ class Neuron(Node):
     config = NodeExecutorConfig(deep_copy_fields=True)
 
     async def execute(self) -> float:
-        # await asyncio.sleep(random.random())
         x = np.array(self.inputs.results)
         z = x @ self.w + self.b
         a = max(z, 0.)
@@ -87,6 +86,7 @@ def batch_runs(label: str, runs: int, nn_architecture: list[int]):
     random.shuffle(multiple_runs)
 
     # print(mlp[0][0].metrics)
+    # mlp[0][0].plot(sleep=1)
 
     return multiple_runs
 
@@ -94,9 +94,9 @@ async def main():
     global NEURON
     
     batches = 1
-    runs_per_batch = 200
-    # nn_architecture = [4, 10, 10, 10, 10, 10, 10, 10, 4, 10, 1, 10, 1, 10, 1]
-    nn_architecture = [4, 5, 5, 5, 5, 1]
+    runs_per_batch = 1
+    nn_architecture = [4, 10, 10, 10, 10, 10, 10, 10, 4, 10, 1, 10, 1, 10, 1]
+    # nn_architecture = [4, 5, 5, 5, 5, 1]
     # nn_architecture = [2,500,500,500,500,500] # 1 mi
     
     batches_results = []
