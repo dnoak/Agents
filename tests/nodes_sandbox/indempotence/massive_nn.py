@@ -18,14 +18,13 @@ class NeuronInput(Node):
 class Neuron(Node):
     w: np.ndarray
     b: float
-    config = NodeExecutorConfig(deep_copy_fields=True)
 
     async def execute(self) -> float:
         x = np.array(self.inputs.results)
         z = x @ self.w + self.b
         a = max(z, 0.)
         return float(a)
-    
+
 def np_execute_benchmark(size: int) -> float:
     w = np.array(np.random.rand(size), dtype=np.float32)
     x = np.array(np.random.rand(size), dtype=np.float32)
@@ -76,7 +75,7 @@ def batch_runs(label: str, runs: int, nn_architecture: list[int]):
         mlp = mlp_generator(f'{label}_{run}', nn_architecture)
         for input in mlp[0]:
             multiple_runs.append(input.run(NodeIO(
-                source=NodeIOSource(id=f'user_nn', execution_id=f'nn', node=None),
+                source=NodeIOSource(session_id=f'user_nn', execution_id=f'nn', node=None),
                 result=random.uniform(-1, 1),
                 status=NodeIOStatus(),
             )))
@@ -93,8 +92,8 @@ def batch_runs(label: str, runs: int, nn_architecture: list[int]):
 async def main():
     global NEURON
     
-    batches = 1
-    runs_per_batch = 1
+    batches = 10
+    runs_per_batch = 100
     nn_architecture = [4, 10, 10, 10, 10, 10, 10, 10, 4, 10, 1, 10, 1, 10, 1]
     # nn_architecture = [4, 5, 5, 5, 5, 1]
     # nn_architecture = [2,500,500,500,500,500] # 1 mi

@@ -20,6 +20,7 @@ from nodesio.models.node import (
     NodeExecutorInputs,
     NodesExecutions,
     NodeExecutorConfig,
+    _NotProcessed,
 )
 
 @dataclass
@@ -50,6 +51,12 @@ class Node(ABC):
     async def execute(self) -> Any:
         ...
 
+    def _set_defaults(self):
+        if not hasattr(self, 'config'):
+            self.config = NodeExecutorConfig()
+        if not hasattr(self, 'attributes'):
+            self.attributes = NodeAttributes()
+
     def _init_graph_globals(self):
         if not hasattr(Node, '_names'):
             Node._names = []
@@ -72,12 +79,6 @@ class Node(ABC):
         if self.name in Node._names:
             raise ValueError(f'Node name `{self.name}` already exists')
         Node._names.append(self.name)
-
-    def _set_defaults(self):
-        if not hasattr(self, 'config'):
-            self.config = NodeExecutorConfig()
-        if not hasattr(self, 'attributes'):
-            self.attributes = NodeAttributes()
     
     @contextmanager
     def timer(self, name='str'):
@@ -113,20 +114,17 @@ class Node(ABC):
             node=self,
             inputs=NodeExecutorInputs(_node=self, _inputs=inputs),
             executions=Node._executions[source.execution_id],
-            routing=NodeExecutorRouting(
-                choices={n.name: n for n in self._output_nodes},
-                default_policy='broadcast',
-                _node_status={}
-            ),
+            routing=NodeExecutorRouting(choices={n.name: NodeIOStatus() for n in self._output_nodes}),
             config=self.config
         ).inject_executor_fields(self._operator_fields_to_inject)
-
+        
         if any(r.status.execution == 'success' for r in inputs):
             executor.result = await executor.execute()
             execution_status = 'success'
         else:
-            executor.routing.clear()
+            executor.routing.skip()
             execution_status = 'skipped'
+            executor.result = _NotProcessed
 
         output = NodeIO(
             source=source,
@@ -141,7 +139,7 @@ class Node(ABC):
                 input=NodeIO(
                     source=source,
                     result=executor.result,
-                    status=executor.routing._node_status[node.name],
+                    status=executor.routing.choices[node.name],
                 )
             )
             for node in self._output_nodes
@@ -166,7 +164,7 @@ class Node(ABC):
             run_inputs = await self._inputs_queue.get(input.source.execution_id)
             output = await self._start(
                 source=NodeIOSource(
-                    id=input.source.id, 
+                    session_id=input.source.session_id, 
                     execution_id=input.source.execution_id, 
                     node=self
                 ),

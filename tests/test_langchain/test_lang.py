@@ -1,3 +1,4 @@
+import time
 from typing import Any
 import langchain
 from langchain.agents import create_agent
@@ -31,4 +32,13 @@ agent = create_agent(
     response_format=AgentOutput,
 )
 
-print(agent.invoke(input={"messages": "olá mundo!"}))
+t00 = time.perf_counter()
+print(agent.invoke(input={"messages": "teste1"}))
+t01 = time.perf_counter()
+
+t10 = time.perf_counter()
+print(agent.invoke(input={"messages": "teste2"}))
+t11 = time.perf_counter()
+
+print(f't00: {t00 - t01}')
+print(f't10: {t10 - t11}')

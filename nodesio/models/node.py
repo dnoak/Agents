@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import copy
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING, Literal
+from typing import Any, TYPE_CHECKING, Literal, overload
 from types import MethodType
 from abc import ABC
 from dataclasses import dataclass
@@ -17,7 +17,7 @@ class NodeIOStatus:
 
 @dataclass
 class NodeIOSource:
-    id: str
+    session_id: str
     execution_id: str
     node: 'Node | None'
 
@@ -26,11 +26,6 @@ class NodeIO:
     source: NodeIOSource
     result: Any
     status: NodeIOStatus
-
-@dataclass
-class NotProcessed:
-    pass
-_NotProcessed = NotProcessed()
 
 @dataclass
 class NodeExecutorInputs:
@@ -61,49 +56,48 @@ class NodeExecutorInputs:
             if i.status.execution == 'success'
         ]
 
+class AllNodesRoutes:
+    pass
+
 @dataclass
 class NodeExecutorRouting:
-    choices: dict[str, 'Node']
-    default_policy: Literal['broadcast', 'skip']
-    _node_status: dict[str, NodeIOStatus]
+    choices: dict[str, NodeIOStatus]
 
-    def __post_init__(self):
-        self._none_item_added = True
-        if self.default_policy == 'broadcast':
-            self._node_status = {k: NodeIOStatus(execution='success') for k in self.choices.keys()}
-        elif self.default_policy == 'skip':
-            self._node_status = {k: NodeIOStatus(execution='skipped') for k in self.choices.keys()}
-        else:
-            raise ValueError(f'Invalid routing default policy `{self.default_policy}`')
+    @overload
+    def route(self, nodes: str): ...
+    @overload
+    def route(self, nodes: list[str]): ...
+    @overload
+    def route(self, nodes: AllNodesRoutes = AllNodesRoutes()): ...             
+    @overload
+    def skip(self, nodes: str): ...
+    @overload
+    def skip(self, nodes: list[str]): ...
+    @overload
+    def skip(self, nodes: AllNodesRoutes = AllNodesRoutes()): ...
 
-    def forward(self, node: str) -> bool:
-        if node in self.choices:
-            if self._none_item_added:
-                self.clear()
-            self._node_status[node].execution = 'success'
-            self._none_item_added = False
-            return True
-        raise ValueError(
-            f'Node `{node}` is not in the routing choices of {list(self.choices.keys())}.'
-        )
+    def _nodes_routing_list(self, nodes: str | list[str] | AllNodesRoutes) -> list[str]:
+        if isinstance(nodes, str):
+            return [nodes]
+        elif isinstance(nodes, list):
+            return nodes
+        elif isinstance(nodes, AllNodesRoutes):
+            return list(self.choices.keys())
+        raise ValueError(f'Invalid nodes routing type `{type(nodes)}`')
     
-    def skip(self, node: str) -> bool:
-        if node in self.choices:
-            self._node_status[node].execution = 'skipped'
-            return True
-        raise ValueError(
-            f'Node `{node}` is not in the routing choices of {list(self.choices.keys())}.'
-        )
-
-    def broadcast(self) -> None:
-        "Broadcast to all the nodes"
-        for node in self.choices:
-            self._node_status[node].execution = 'success'
+    def route(self, nodes: str | list[str] | AllNodesRoutes = AllNodesRoutes()):
+        forward_nodes = self._nodes_routing_list(nodes)
+        for node in forward_nodes:
+            if node not in self.choices:
+                raise ValueError(f'Node `{node}` is not a valid routing in {list(self.choices.keys())}.')
+            self.choices[node].execution = 'success'
     
-    def clear(self):
-        "Skip all the nodes (terminal state for this node)"
-        for node in self.choices:
-            self._node_status[node].execution = 'skipped'
+    def skip(self, nodes: str | list[str] | AllNodesRoutes = AllNodesRoutes()):
+        skip_nodes = self._nodes_routing_list(nodes)
+        for node in skip_nodes:
+            if node not in self.choices:
+                raise ValueError(f'Node `{node}` is not a valid routing in {list(self.choices.keys())}.')
+            self.choices[node].execution = 'skipped'
 
 @dataclass
 class NodesExecutions:
@@ -121,7 +115,11 @@ class NodesExecutions:
 
 @dataclass
 class NodeExecutorConfig:
-    deep_copy_fields: bool = False
+    persist_memory_in_session: bool = False
+
+@dataclass
+class NotProcessed: ...
+_NotProcessed = NotProcessed()
 
 @dataclass
 class NodeExecutor:
@@ -133,13 +131,6 @@ class NodeExecutor:
     
     def __post_init__(self):
         self.result: Any = _NotProcessed
-        if self.config.deep_copy_fields:
-            self.set_attr = self._set_attr_deepcopy
-        else:
-            self.set_attr = self._set_attr
-
-    def _set_attr(self, field: str):
-        setattr(self, field, getattr(self.node, field))
 
     def _set_attr_deepcopy(self, field: str):
         setattr(self, field, copy.deepcopy(getattr(self.node, field)))
@@ -148,7 +139,7 @@ class NodeExecutor:
         if self.node is None:
             return self
         for f in fields:
-            self.set_attr(f)
+            self._set_attr_deepcopy(f)
         self.execute = MethodType(self.node.execute.__func__, self)
         return self
     

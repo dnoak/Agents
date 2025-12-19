@@ -24,15 +24,9 @@ class Neuron(Node):
 
     async def execute(self) -> float:
         # 🔴 changing values in concurrent executions #
-        b = self.b
-        w0 = self.w[0]
-        self.b = -100
-        self.w[0] = -100
-        # 🟡 randomizing processor order
-        await asyncio.sleep(random.uniform(0, 0.2))
-        self.b = b
-        self.w[0] = w0
-        # # # # # # # # # # # # # # # # # # # # # # #
+        if self.inputs._inputs[0].source.session_id.startswith('modified'):
+            self.w = [random.random() for w in self.w]
+            self.b = random.random()
 
         x = np.array(self.inputs.results)
         z = x @ self.w + self.b
@@ -78,9 +72,9 @@ async def main():
 
     nx, ny = nn()
 
-    xy = [(round(random.uniform(-4, 4),2), round(random.uniform(-4, 4),2)) for _ in range(100)]
-    outputs = []
-    real_outputs = []
+    xy = [(round(random.uniform(-4, 4),2), round(random.uniform(-4, 4),2)) for _ in range(10)]
+    
+    outputs = {'inputs': [], 'modified_inputs': [], 'real_output': []}
     for i, (x, y) in enumerate(xy):
         inputs = [
             nx.run(NodeIO(
@@ -94,26 +88,47 @@ async def main():
                 status=NodeIOStatus(),
             )),
         ]
-        outputs += inputs
-        real_outputs.append(neuron(x, y)[0])
+        modified_inputs = [
+            nx.run(NodeIO(
+                source=NodeIOSource(session_id=f'modified_user_nn{i}', execution_id=f'modified_{i}', node=None),
+                result=x,
+                status=NodeIOStatus(),
+            )),
+            ny.run(NodeIO(
+                source=NodeIOSource(session_id=f'modified_user_nn{i}', execution_id=f'modified_{i}', node=None),
+                result=y,
+                status=NodeIOStatus(),
+            )),
+        ]
+        outputs['inputs'] += inputs
+        outputs['modified_inputs'] += modified_inputs
+        outputs['real_output'].append(neuron(x, y)[0])
 
     # 🔴 breaking the order of inputs arrival
-    random.shuffle(outputs)
+    grouped = outputs['inputs'] + outputs['modified_inputs']
+    random.shuffle(grouped)
 
-    node_outputs: list[NodeIO] = sum(await asyncio.gather(*outputs), [])
+    processed_outputs = sum(await asyncio.gather(*grouped), [])
+    node_outputs = list(filter(lambda x: x.source.session_id.startswith('user_nn'), processed_outputs))
     node_outputs.sort(key=lambda x: int(x.source.execution_id))
+    
+    modified_node_outputs = list(filter(lambda x: x.source.session_id.startswith('modified_user_nn'), processed_outputs))
+    modified_node_outputs.sort(key=lambda x: int(x.source.execution_id.replace('modified_', '')))
 
-    for (x, y), real_output, node_output in zip(xy, real_outputs, node_outputs):
+    for (x, y), real_output, node_output, modified_node_output in zip(xy, outputs['real_output'], node_outputs, modified_node_outputs):
         assert {node_output.source.execution_id} == set(
             e.source.execution_id for e in
             nx._executions[node_output.source.execution_id].values()
         )
         assert real_output == node_output.result, f'real: {real_output}, nodes: {node_output.result}'
         
+        assert real_output != modified_node_output.result, f'real: {real_output}, mod_nodes: {modified_node_output.result}'
+        
         print(f'exec_id: {node_output.source.execution_id}')
         print(f'x: {x}, y: {y}')
         print(f'real : {real_output}')
         print(f'nodes: {node_output.result}')
+        print(f'modified_nodes: {modified_node_output.result}')
         print()
 
 
