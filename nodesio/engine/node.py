@@ -9,8 +9,10 @@ import dataclasses
 import asyncio
 import graphviz
 import time
-from nodesio.engine.input_queue import NodeInputsQueue
+from nodesio.engine.inputs_queue import NodeInputsQueue
+from nodesio.engine.session import SessionManager
 from nodesio.models.node import (
+    _NotProcessed,
     NodeExecutor,
     NodeAttributes,
     NodeIO,
@@ -20,14 +22,13 @@ from nodesio.models.node import (
     NodeExecutorInputs,
     NodesExecutions,
     NodeExecutorConfig,
-    _NotProcessed,
+    NodeSession,
 )
 
 @dataclass
 class Node(ABC):
     name: str = field(kw_only=True)
     config: NodeExecutorConfig = field(init=False, repr=False, kw_only=True)
-    attributes: NodeAttributes = field(init=False, repr=False, kw_only=True)
     inputs: NodeExecutorInputs = field(init=False, repr=False)
     executions: dict[str, NodeIO] = field(init=False, repr=False)
     routing: NodeExecutorRouting = field(init=False, repr=False)
@@ -38,11 +39,11 @@ class Node(ABC):
         self._output_nodes: list[Node] = []
         self._input_nodes: list[Node] = []
         self._running_executions: defaultdict[str, set[str]] = defaultdict(set)
-        self._operator_fields_to_inject: set[str] = set.difference(
+        self._custom_executor_field_names: set[str] = set.difference(
             set(n.name for n in dataclasses.fields(self)),
             set(n.name for n in dataclasses.fields(NodeExecutor))
         )
-        self.is_terminal: bool = True
+        self._sessions: dict[str, NodeSession] = {}
         self._set_defaults()
         self._init_graph_globals()
         self._assert_node_name()
@@ -52,16 +53,15 @@ class Node(ABC):
         ...
 
     def _set_defaults(self):
+        self.attributes = NodeAttributes()
         if not hasattr(self, 'config'):
             self.config = NodeExecutorConfig()
-        if not hasattr(self, 'attributes'):
-            self.attributes = NodeAttributes()
 
     def _init_graph_globals(self):
         if not hasattr(Node, '_names'):
             Node._names = []
         if not hasattr(Node, '_executions'):
-            Node._executions: NodesExecutions = NodesExecutions()
+            Node._graph_executions: NodesExecutions = NodesExecutions()
         if not hasattr(Node, '_graph'):
             Node._graph = graphviz.Digraph(graph_attr=self.attributes.digraph_graph)
         if not hasattr(Node, '_metrics'):
@@ -79,26 +79,18 @@ class Node(ABC):
         if self.name in Node._names:
             raise ValueError(f'Node name `{self.name}` already exists')
         Node._names.append(self.name)
-    
+
     @contextmanager
-    def timer(self, name='str'):
-        t0 = time.perf_counter()
-        yield
-        t1 = time.perf_counter()
-        Node._metrics[name] += (t1 - t0)
-    
-    @contextmanager
-    def execution_running(self, execution_id='str'):
+    def _running_execution(self, execution_id: str):
         self._running_executions[execution_id].add(self.name)
         yield
         self._running_executions[execution_id].remove(self.name)
 
-    def plot(self, sleep: float = 0.1):
+    def plot(self, sleep: float = 0.2):
         Image.open(BytesIO(Node._graph.pipe(format='png'))).show(title=f'{self.name} executions')
         time.sleep(sleep)
     
     def connect(self, node: 'Node'):
-        self.is_terminal = False
         self._output_nodes.append(node)
         node._inputs_queue.sort_order.append(self.name)
         node._input_nodes.append(self)
@@ -112,14 +104,22 @@ class Node(ABC):
     async def _start(self, source: NodeIOSource, inputs: list[NodeIO]) -> list[NodeIO]:
         executor = NodeExecutor(
             node=self,
-            inputs=NodeExecutorInputs(_node=self, _inputs=inputs),
-            executions=Node._executions[source.execution_id],
+            inputs=NodeExecutorInputs(_inputs=inputs),
+            executions=Node._graph_executions[source.execution_id],
             routing=NodeExecutorRouting(choices={n.name: NodeIOStatus() for n in self._output_nodes}),
             config=self.config
-        ).inject_executor_fields(self._operator_fields_to_inject)
+        )
+        
+        if source.session_id not in self._sessions:
+            self._sessions[source.session_id] = NodeSession(
+                session_id=source.session_id,
+            )
+        
+        executor.inject_custom_fields(self._sessions[source.session_id].executor_fields)
         
         if any(r.status.execution == 'success' for r in inputs):
             executor.result = await executor.execute()
+            self._sessions[source.session_id].update_fields(self._custom_executor_field_names, executor)
             execution_status = 'success'
         else:
             executor.routing.skip()
@@ -132,7 +132,9 @@ class Node(ABC):
             status=NodeIOStatus(execution=execution_status, message=''),
         )
 
-        Node._executions[source.execution_id] = output
+        Node._graph_executions[source.execution_id] = output
+        self._sessions[source.session_id].insert_execution(source.execution_id)
+        #.executions.append(source.execution_id)
 
         forward_nodes = [
             node.run(
@@ -160,7 +162,7 @@ class Node(ABC):
         if input.source.execution_id in self._running_executions:
             return []
         
-        with self.execution_running(execution_id=input.source.execution_id):
+        with self._running_execution(execution_id=input.source.execution_id):
             run_inputs = await self._inputs_queue.get(input.source.execution_id)
             output = await self._start(
                 source=NodeIOSource(

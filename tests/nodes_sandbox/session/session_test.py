@@ -4,18 +4,15 @@ import time
 from nodesio.engine.node import Node
 from nodesio.models.node import NodeIO, NodeIOStatus, NodeIOSource, NodeExecutorConfig, AllNodesRoutes, NotProcessed
 from rich import print
-from pympler import asizeof
 
 @dataclass
 class Alphabet(Node):
     count: int = 0
-    config = NodeExecutorConfig(persist_memory_in_session=True)
+    #config = NodeExecutorConfig(persist_memory_in_session=True)
 
     async def execute(self) -> int:
-        print(self.inputs.results)
-        result = sum(self.inputs.results) + self.count
         self.count += 1
-        return result
+        return sum(self.inputs.results)
 
 a = Alphabet(name='a')
 b = Alphabet(name='b')
@@ -34,23 +31,26 @@ b.connect(c)
 # e.connect(g)
 # f.connect(g)
 # 
-# a.plot(sleep=0.5)
+#a.plot(sleep=0.5)
 
 # print(a.config)
 
-executions = [0, 100, 200, 300, 400]
-print(executions)
+executions = [100, 200, 300, 400, 500]
+# print(executions)
 
 async def main():
-    for exec in executions:
-        print(f'Execution {exec}')
-        res = await a.run(NodeIO(
-            source=NodeIOSource(session_id='same_session', execution_id=str(exec), node=None),
-            result=exec,
-            status=NodeIOStatus(),
-        ))
-        # print(res)
-    # print(a._executions)
+    for hundred_exec in executions:
+        for i in range(int(hundred_exec / 10)):
+            res = await a.run(NodeIO(
+                source=NodeIOSource(session_id=f'session_{hundred_exec}', execution_id=f'{hundred_exec}_{i}', node=None),
+                result=hundred_exec + i,
+                status=NodeIOStatus(),
+            ))
+            # print(res)
+            # input()
+    print(a._graph_executions['200_0'])
+    print(a._sessions['session_100'].executions)
+    # print(a._sessions_manager.get_session('session_100').executions)
 
 asyncio.run(main())
 

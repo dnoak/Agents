@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import copy
 from dataclasses import dataclass, field
+import datetime
 from typing import Any, TYPE_CHECKING, Literal, overload
 from types import MethodType
 from abc import ABC
@@ -29,7 +30,6 @@ class NodeIO:
 
 @dataclass
 class NodeExecutorInputs:
-    _node: 'Node'
     _inputs: list[NodeIO]
 
     def __post_init__(self):
@@ -43,7 +43,7 @@ class NodeExecutorInputs:
         if node_name in self._dict_inputs:
             return self._dict_inputs[node_name]
         raise KeyError(
-            f'Input `{node_name}` not found in {self._node.name}. Available inputs are {list(self._dict_inputs.keys())}'
+            f'Input `{node_name}` not found. Available inputs are {list(self._dict_inputs.keys())}'
         )
 
     def __iter__(self):
@@ -135,18 +135,36 @@ class NodeExecutor:
     def _set_attr_deepcopy(self, field: str):
         setattr(self, field, copy.deepcopy(getattr(self.node, field)))
     
-    def inject_executor_fields(self, fields: set[str]) -> 'NodeExecutor':
-        if self.node is None:
-            return self
-        for f in fields:
-            self._set_attr_deepcopy(f)
+    def inject_custom_fields(self, fields: list[tuple[str, Any]] | None) -> 'NodeExecutor':
+        if fields is None:
+            for f in self.node._custom_executor_field_names:
+                setattr(self, f, copy.deepcopy(getattr(self.node, f)))
+        else:
+            for name, value in fields:
+                setattr(self, name, value)
+        
         self.execute = MethodType(self.node.execute.__func__, self)
         return self
     
     async def execute(self) -> Any:
         raise NotImplementedError('Replace this method with your own logic')
 
-
+@dataclass
+class NodeSession:
+    session_id: str
+    executions: list[str] = field(default_factory=list)
+    executor_fields: list[tuple[str, Any]] | None = None
+    last_update: datetime.datetime = field(default_factory=datetime.datetime.now)
+    
+    def update_fields(self, field_names: set[str], executor: NodeExecutor):
+        self.executor_fields = [
+            (name, getattr(executor, name)) for name in field_names
+        ]
+    
+    def insert_execution(self, execution_id: str):
+        self.executions.append(execution_id)
+        self.last_update = datetime.datetime.now()
+    
 class NodeAttributes:
     @property
     def digraph_graph(self) -> dict:

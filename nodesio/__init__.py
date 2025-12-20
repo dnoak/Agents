@@ -1,5 +1,5 @@
 from .engine.node import Node
-from .engine.input_queue import NodeInputsQueue
+from .engine.inputs_queue import NodeInputsQueue
 from .models.node import (
     NodeAttributes,
     NodeIO,
