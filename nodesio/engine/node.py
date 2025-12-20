@@ -63,8 +63,6 @@ class Node(ABC):
             Node._graph_executions: NodesExecutions = NodesExecutions(ttl=self.config.execution_ttl)
         if not hasattr(Node, '_graph'):
             Node._graph = graphviz.Digraph(graph_attr=self.attributes.digraph_graph)
-        if not hasattr(Node, '_metrics'):
-            Node._metrics = defaultdict(float)
         if not hasattr(Node, '_ttl_trigger_active'):
             Node._ttl_trigger_active = False
         Node._graph.node(
@@ -152,9 +150,9 @@ class Node(ABC):
         return [output]
     
     async def run(self, input: NodeIO) -> list[NodeIO]:
-        # if not self._ttl_trigger_active:
-        #     asyncio.create_task(Node._graph_executions._ttl_trigger())
-        #     self._ttl_active = True
+        if not Node._ttl_trigger_active:
+            asyncio.create_task(Node._graph_executions._ttl_trigger())
+            Node._ttl_trigger_active = True
         
         self._inputs_queue.put(NodeIO(
             source=input.source,
