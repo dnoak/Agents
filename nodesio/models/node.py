@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
+import asyncio
+from collections import defaultdict
 import copy
 from dataclasses import dataclass, field
 import datetime
+import time
 from typing import Any, TYPE_CHECKING, Literal, overload
 from types import MethodType
 from abc import ABC
@@ -101,21 +104,41 @@ class NodeExecutorRouting:
 
 @dataclass
 class NodesExecutions:
-    _executions: dict[str, dict[str, NodeIO]] = field(default_factory=dict)
+    ttl: float
+
+    def  __post_init__(self):
+        self.executions: dict[str, dict[str, NodeIO]] = defaultdict(dict)
+        # self.executions: dict[str, dict[str, NodeIO]] = {}
+        self.last_updates: dict[str, float] = {}
+
+    def __len__(self):
+        return len(self.executions)
     
     def __getitem__(self, execution_id: str) -> dict[str, NodeIO]:
-        if execution_id not in self._executions:
-            self._executions[execution_id] = {}
-        return self._executions[execution_id]
+        if execution_id not in self.executions:
+            self.executions[execution_id] = {}
+        return self.executions[execution_id]
     
     def __setitem__(self, execution_id: str, node_output: NodeIO):
-        if execution_id not in self._executions:
-            self._executions[execution_id] = {}
-        self._executions[execution_id][node_output.source.node.name] = node_output # type: ignore
+        self.executions[execution_id][node_output.source.node.name] = node_output # type: ignore
+        self.last_updates[execution_id] = time.time()
+    
+    async def _ttl_trigger(self):
+        while True:
+            await asyncio.sleep(self.ttl)
+            now = time.time()
+            expired_executions = [
+                k for k, v in self.last_updates.items() if
+                v + self.ttl < now
+            ]
+            for execution_id in expired_executions:
+                del self.executions[execution_id]
+                del self.last_updates[execution_id]
+
 
 @dataclass
 class NodeExecutorConfig:
-    persist_memory_in_session: bool = False
+    execution_ttl: float = 300
 
 @dataclass
 class NotProcessed: ...
@@ -135,8 +158,8 @@ class NodeExecutor:
     def _set_attr_deepcopy(self, field: str):
         setattr(self, field, copy.deepcopy(getattr(self.node, field)))
     
-    def inject_custom_fields(self, fields: list[tuple[str, Any]] | None) -> 'NodeExecutor':
-        if fields is None:
+    def inject_custom_fields(self, fields: list[tuple[str, Any]]) -> 'NodeExecutor':
+        if not fields:
             for f in self.node._custom_executor_field_names:
                 setattr(self, f, copy.deepcopy(getattr(self.node, f)))
         else:
@@ -149,22 +172,6 @@ class NodeExecutor:
     async def execute(self) -> Any:
         raise NotImplementedError('Replace this method with your own logic')
 
-@dataclass
-class NodeSession:
-    session_id: str
-    executions: list[str] = field(default_factory=list)
-    executor_fields: list[tuple[str, Any]] | None = None
-    last_update: datetime.datetime = field(default_factory=datetime.datetime.now)
-    
-    def update_fields(self, field_names: set[str], executor: NodeExecutor):
-        self.executor_fields = [
-            (name, getattr(executor, name)) for name in field_names
-        ]
-    
-    def insert_execution(self, execution_id: str):
-        self.executions.append(execution_id)
-        self.last_update = datetime.datetime.now()
-    
 class NodeAttributes:
     @property
     def digraph_graph(self) -> dict:

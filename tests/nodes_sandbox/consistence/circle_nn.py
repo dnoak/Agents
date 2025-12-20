@@ -106,7 +106,7 @@ async def main():
     for (x, y), real_output, node_output in zip(xy, real_outputs, node_outputs):
         assert {node_output.source.execution_id} == set(
             e.source.execution_id for e in
-            nx._executions[node_output.source.execution_id].values()
+            nx._graph_executions[node_output.source.execution_id].values()
         )
         assert real_output == node_output.result, f'real: {real_output}, nodes: {node_output.result}'
         

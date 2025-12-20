@@ -10,7 +10,6 @@ import asyncio
 import graphviz
 import time
 from nodesio.engine.inputs_queue import NodeInputsQueue
-from nodesio.engine.session import SessionManager
 from nodesio.models.node import (
     _NotProcessed,
     NodeExecutor,
@@ -22,7 +21,6 @@ from nodesio.models.node import (
     NodeExecutorInputs,
     NodesExecutions,
     NodeExecutorConfig,
-    NodeSession,
 )
 
 @dataclass
@@ -43,7 +41,7 @@ class Node(ABC):
             set(n.name for n in dataclasses.fields(self)),
             set(n.name for n in dataclasses.fields(NodeExecutor))
         )
-        self._sessions: dict[str, NodeSession] = {}
+        self._sessions_executor_fields: dict[str, list[tuple[str, Any]]] = defaultdict(list)
         self._set_defaults()
         self._init_graph_globals()
         self._assert_node_name()
@@ -61,11 +59,14 @@ class Node(ABC):
         if not hasattr(Node, '_names'):
             Node._names = []
         if not hasattr(Node, '_executions'):
-            Node._graph_executions: NodesExecutions = NodesExecutions()
+            # 🥵 bug: só o primeiro Node criado com config vai setar o TTL global
+            Node._graph_executions: NodesExecutions = NodesExecutions(ttl=self.config.execution_ttl)
         if not hasattr(Node, '_graph'):
             Node._graph = graphviz.Digraph(graph_attr=self.attributes.digraph_graph)
         if not hasattr(Node, '_metrics'):
             Node._metrics = defaultdict(float)
+        if not hasattr(Node, '_ttl_trigger_active'):
+            Node._ttl_trigger_active = False
         Node._graph.node(
             name=self.name,
             label=self.attributes.node_label(
@@ -109,17 +110,17 @@ class Node(ABC):
             routing=NodeExecutorRouting(choices={n.name: NodeIOStatus() for n in self._output_nodes}),
             config=self.config
         )
-        
-        if source.session_id not in self._sessions:
-            self._sessions[source.session_id] = NodeSession(
-                session_id=source.session_id,
-            )
-        
-        executor.inject_custom_fields(self._sessions[source.session_id].executor_fields)
+
+        if source.session_id not in self._sessions_executor_fields:
+            self._sessions_executor_fields[source.session_id] = []
+
+        executor.inject_custom_fields(self._sessions_executor_fields[source.session_id])
         
         if any(r.status.execution == 'success' for r in inputs):
             executor.result = await executor.execute()
-            self._sessions[source.session_id].update_fields(self._custom_executor_field_names, executor)
+            self._sessions_executor_fields[source.session_id] = [
+                (name, getattr(executor, name)) for name in self._custom_executor_field_names
+            ]
             execution_status = 'success'
         else:
             executor.routing.skip()
@@ -133,8 +134,6 @@ class Node(ABC):
         )
 
         Node._graph_executions[source.execution_id] = output
-        self._sessions[source.session_id].insert_execution(source.execution_id)
-        #.executions.append(source.execution_id)
 
         forward_nodes = [
             node.run(
@@ -153,6 +152,10 @@ class Node(ABC):
         return [output]
     
     async def run(self, input: NodeIO) -> list[NodeIO]:
+        # if not self._ttl_trigger_active:
+        #     asyncio.create_task(Node._graph_executions._ttl_trigger())
+        #     self._ttl_active = True
+        
         self._inputs_queue.put(NodeIO(
             source=input.source,
             result=input.result,

@@ -111,7 +111,7 @@ async def main():
         batches_times.append(t1 - t0)
 
         print(f'Batch {b} took {t1 - t0} seconds')
-
+    
     for pair in combinations(batches_results, 2):
         assert len(pair) == 2
         assert pair[0] != pair[1]

@@ -8,7 +8,7 @@ from rich import print
 @dataclass
 class Alphabet(Node):
     count: int = 0
-    #config = NodeExecutorConfig(persist_memory_in_session=True)
+    config = NodeExecutorConfig(execution_ttl=1)
 
     async def execute(self) -> int:
         self.count += 1
@@ -46,10 +46,18 @@ async def main():
                 result=hundred_exec + i,
                 status=NodeIOStatus(),
             ))
+            print(a._running_executions)
             # print(res)
             # input()
-    print(a._graph_executions['200_0'])
-    print(a._sessions['session_100'].executions)
+    # print(a._graph_executions['300_0'])
+    while True:
+        # print(list(a._graph_executions.executions.keys()))
+        print(len(a._graph_executions))
+        print(len(a._running_executions))
+        print(sum(len(v) for v in a._running_executions.values()))
+        print()
+        await asyncio.sleep(0.2)
+    # print(a._sessions['session_100'].executions)
     # print(a._sessions_manager.get_session('session_100').executions)
 
 asyncio.run(main())
