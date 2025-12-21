@@ -9,6 +9,7 @@ from typing import Any, TYPE_CHECKING, Literal, overload
 from types import MethodType
 from abc import ABC
 from dataclasses import dataclass
+from nodesio.engine.workflow import Execution
 if TYPE_CHECKING:
     from nodesio.engine.node import Node
 
@@ -102,38 +103,38 @@ class NodeExecutorRouting:
                 raise ValueError(f'Node `{node}` is not a valid routing in {list(self.choices.keys())}.')
             self.choices[node].execution = 'skipped'
 
-@dataclass
-class NodesExecutions:
-    ttl: float
+# @dataclass
+# class NodesExecutions:
+#     ttl: float
 
-    def  __post_init__(self):
-        self.executions: dict[str, dict[str, NodeIO]] = defaultdict(dict)
-        # self.executions: dict[str, dict[str, NodeIO]] = {}
-        self.last_updates: dict[str, float] = {}
+#     def  __post_init__(self):
+#         self.executions: dict[str, dict[str, NodeIO]] = defaultdict(dict)
+#         # self.executions: dict[str, dict[str, NodeIO]] = {}
+#         self.last_updates: dict[str, float] = {}
 
-    def __len__(self):
-        return len(self.executions)
+#     def __len__(self):
+#         return len(self.executions)
     
-    def __getitem__(self, execution_id: str) -> dict[str, NodeIO]:
-        if execution_id not in self.executions:
-            self.executions[execution_id] = {}
-        return self.executions[execution_id]
+#     def __getitem__(self, execution_id: str) -> dict[str, NodeIO]:
+#         if execution_id not in self.executions:
+#             self.executions[execution_id] = {}
+#         return self.executions[execution_id]
     
-    def __setitem__(self, execution_id: str, node_output: NodeIO):
-        self.executions[execution_id][node_output.source.node.name] = node_output # type: ignore
-        self.last_updates[execution_id] = time.time()
+#     def __setitem__(self, execution_id: str, node_output: NodeIO):
+#         self.executions[execution_id][node_output.source.node.name] = node_output # type: ignore
+#         self.last_updates[execution_id] = time.time()
     
-    async def _ttl_trigger(self):
-        while True:
-            await asyncio.sleep(self.ttl)
-            now = time.time()
-            expired_executions = [
-                k for k, v in self.last_updates.items() if
-                v + self.ttl < now
-            ]
-            for execution_id in expired_executions:
-                del self.executions[execution_id]
-                del self.last_updates[execution_id]
+#     async def _ttl_trigger(self):
+#         while True:
+#             await asyncio.sleep(self.ttl)
+#             now = time.time()
+#             expired_executions = [
+#                 k for k, v in self.last_updates.items() if
+#                 v + self.ttl < now
+#             ]
+#             for execution_id in expired_executions:
+#                 del self.executions[execution_id]
+#                 del self.last_updates[execution_id]
 
 
 @dataclass
@@ -147,8 +148,10 @@ _NotProcessed = NotProcessed()
 @dataclass
 class NodeExecutor:
     node: 'Node'
+    session_id: str
+    execution_id: str
     inputs: NodeExecutorInputs
-    executions: dict[str, NodeIO]
+    execution: Execution
     routing: NodeExecutorRouting
     config: NodeExecutorConfig
     
@@ -158,8 +161,10 @@ class NodeExecutor:
     def _set_attr_deepcopy(self, field: str):
         setattr(self, field, copy.deepcopy(getattr(self.node, field)))
     
-    def inject_custom_fields(self, fields: list[tuple[str, Any]]) -> 'NodeExecutor':
-        if not fields:
+    def inject_custom_fields(self, fields: list[tuple[str, Any]] | None) -> 'NodeExecutor':
+        # print(f'🟢 Injecting custom fields on {self.node.name}')
+        # print(fields)
+        if fields is None:
             for f in self.node._custom_executor_field_names:
                 setattr(self, f, copy.deepcopy(getattr(self.node, f)))
         else:
