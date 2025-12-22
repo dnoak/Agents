@@ -1,13 +1,17 @@
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from io import BytesIO
+import tempfile
 import time
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Literal
+import webbrowser
 import graphviz
-from collections import defaultdict as ddict, deque
+from collections import deque
 from rich import print
+from PIL import Image
 if TYPE_CHECKING:
-    from nodesio.models.node import NodeIO
+    from nodesio.models.node import NodeIO, GraphvizAttributes
 
 @dataclass
 class ExecutionMemory:
@@ -43,11 +47,35 @@ class Session:
 
 @dataclass
 class Workflow:
-    node_names: list[str]
-    graph: graphviz.Digraph
     session_ttl: float
-    sessions: dict[str, Session] = field(default_factory=dict)
-    active: bool = False
+    graphviz_attributes: 'GraphvizAttributes'
+
+    def __post_init__(self):
+        self.node_names: list[str] = []
+        self.sessions: dict[str, Session] = {}
+        self.active: bool = False
+        self.graph: graphviz.Digraph = graphviz.Digraph(
+            graph_attr=self.graphviz_attributes.graph()
+        )
+
+    def plot(self, mode: Literal['html', 'image'] = 'image', wait: float = 0.2):
+        if mode == 'image':
+            Image.open(BytesIO(self.graph.pipe(format='png'))).show(title='Workflow')
+            time.sleep(wait)
+        elif mode == 'html':
+            svg = self.graph.pipe(format='svg').decode('utf-8')
+            html = self.graphviz_attributes.html_plot(svg)
+            with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    suffix=".html",
+                    delete=False,
+                    encoding="utf-8"
+                ) as f:
+                f.write(html)
+                path = f.name
+            webbrowser.open(f"file:///{path}")
+        else: 
+            raise ValueError(f'Invalid mode `{mode}`')
     
     def __getitem__(self, session_id: str) -> Session:
         session = self.sessions.get(session_id)

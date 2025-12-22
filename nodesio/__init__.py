@@ -1,7 +1,6 @@
 from .engine.node import Node
 from .engine.inputs_queue import NodeInputsQueue
 from .models.node import (
-    NodeAttributes,
     NodeIO,
     NodeIOStatus,
     NodeIOSource,
@@ -15,7 +14,6 @@ from .models.node import (
 __all__ = [
     'Node',
     'NodeInputsQueue',
-    'NodeAttributes',
     'NodeIO',
     'NodeIOStatus',
     'NodeIOSource',

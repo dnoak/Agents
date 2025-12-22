@@ -16,7 +16,7 @@ class NodeInputsQueue:
         self.pending: defaultdict[str, dict[str, NodeIO]] = defaultdict(dict)
         self.required_inputs: defaultdict[str, set[str]] = defaultdict(set)
         self.sort_order: list[str] = []
-
+    
     def put(self, input: NodeIO):
         if input.source.node is None:
             future = asyncio.get_running_loop().create_future()

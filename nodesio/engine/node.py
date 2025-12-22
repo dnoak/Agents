@@ -1,20 +1,15 @@
-from dataclasses import InitVar, dataclass, field
-from typing import Any, get_type_hints
-from contextlib import asynccontextmanager
-from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any, Literal, get_type_hints
 from abc import ABC, abstractmethod
-from io import BytesIO
-from PIL import Image
 import dataclasses
 import asyncio
 import graphviz
-import time
 from nodesio.engine.inputs_queue import NodeInputsQueue
 from nodesio.engine.workflow import Execution, Workflow
 from nodesio.models.node import (
     _NotProcessed,
+    GraphvizAttributes,
     NodeExecutor,
-    NodeAttributes,
     NodeIO,
     NodeIOStatus,
     NodeIOSource,
@@ -25,97 +20,65 @@ from nodesio.models.node import (
 )
 
 @dataclass
-class Node(ABC):
-    name: str = field(kw_only=True)
+class NodeInterface(ABC):
     session_id: str = field(init=False, repr=False)
     execution_id: str = field(init=False, repr=False)
-    config: NodeExecutorConfig = field(init=False, repr=False, kw_only=True)
     inputs: NodeExecutorInputs = field(init=False, repr=False)
     execution: Execution = field(init=False, repr=False)
     routing: NodeExecutorRouting = field(init=False, repr=False)
-
-    def __post_init__(self):
-        self._output_schema = get_type_hints(self.execute)['return']
-        self._inputs_queue: NodeInputsQueue = NodeInputsQueue(node=self)
-        self._output_nodes: list[Node] = []
-        self._input_nodes: list[Node] = []
-        self._running_executions: defaultdict[str, set[str]] = defaultdict(set)
-        # self._sessions_executor_fields: dict[str, list[tuple[str, Any]]] = defaultdict(list)
-        self._custom_executor_field_names: set[str] = set.difference(
-            set(n.name for n in dataclasses.fields(self)),
-            set(n.name for n in dataclasses.fields(NodeExecutor))
-        )
-        # print(self._custom_executor_field_names)
-        self._set_defaults()
-        self._init_graph_globals()
-        self._assert_node_name()
     
     @abstractmethod
     async def execute(self) -> Any:
         ...
 
-    def _set_defaults(self):
-        self._attributes = NodeAttributes()
-        if not hasattr(self, 'config'):
-            self.config = NodeExecutorConfig()
+@dataclass(kw_only=True)
+class Node(NodeInterface):
+    name: str
+    config: NodeExecutorConfig = field(init=False, repr=False)
 
-    def _init_graph_globals(self):
-        # if not hasattr(Node, '_names'):
-        #     Node._names = []
-        # if not hasattr(Node, '_graph_executions'):
-        #     # 🥵 bug: só o primeiro Node criado com config vai setar o TTL global
-        #     Node._graph_executions: NodesExecutions = NodesExecutions(ttl=self.config.execution_ttl)
-        # if not hasattr(Node, '_graph'):
-        #     Node._graph = graphviz.Digraph(graph_attr=self._attributes.digraph_graph)
-        # if not hasattr(Node, '_ttl_trigger_active'):
-        #     Node._ttl_trigger_active = False
-        # Node._graph.node(
-        #     name=self.name,
-        #     label=self._attributes.node_label(
-        #         self.name, 
-        #         self._output_schema,
-        #     ), 
-        #     **self._attributes.digraph_node,
-        # )
+    def __post_init__(self):
+        self.config = self.config if hasattr(self, 'config') else NodeExecutorConfig()
+        self._output_schema = get_type_hints(self.execute)['return']
+        self._inputs_queue: NodeInputsQueue = NodeInputsQueue(node=self)
+        self._input_nodes: list[Node] = []
+        self._output_nodes: list[Node] = []
+        self._custom_executor_field_names: set[str] = set.difference(
+            set(n.name for n in dataclasses.fields(self)),
+            set(n.name for n in dataclasses.fields(NodeExecutor))
+        )
+        self._init_workflow()
+        self._assert_node_name()
+
+    def _init_workflow(self):
         if not hasattr(Node, '_workflow'):
             Node._workflow = Workflow(
-                node_names=[],
-                graph=graphviz.Digraph(graph_attr=self._attributes.digraph_graph),
                 session_ttl=self.config.execution_ttl,
+                graphviz_attributes=GraphvizAttributes(),
             )
-            Node._workflow.graph.node(
-                name=self.name,
-                label=self._attributes.node_label(
-                    self.name, 
-                    self._output_schema,
-                ),
-                **self._attributes.digraph_node,
-            )
+        Node._workflow.graph.node(
+            name=self.name,
+            **Node._workflow.graphviz_attributes.node(
+                name=self.name, 
+                output_schema=self._output_schema
+            ),
+        )
         
     def _assert_node_name(self):
         if self.name in Node._workflow.node_names:
             raise ValueError(f'Node name `{self.name}` already exists')
         Node._workflow.node_names.append(self.name)
-    
-    @asynccontextmanager
-    async def _running_execution(self, execution_id: str):
-        self._running_executions[execution_id].add(self.name)
-        yield
-        # 🥵 execution_id nunca é apagado depois de terminado ()
-        self._running_executions[execution_id].remove(self.name)
 
-    def plot(self, sleep: float = 0.2):
-        Image.open(BytesIO(Node._workflow.graph.pipe(format='png'))).show(title=f'{self.name} executions')
-        time.sleep(sleep)
-    
+    def plot(self, mode: Literal['html', 'image'] = 'image', wait: float = 0.2):
+        Node._workflow.plot(mode=mode, wait=wait)
+
     def connect(self, node: 'Node'):
         self._output_nodes.append(node)
         node._inputs_queue.sort_order.append(self.name)
         node._input_nodes.append(self)
         Node._workflow.graph.edge(
             tail_name=self.name,
-            head_name=node.name, 
-            **self._attributes.edge()
+            head_name=node.name,
+            **Node._workflow.graphviz_attributes.edge(self._output_schema)
         )
         return node
     
@@ -125,16 +88,11 @@ class Node(ABC):
             session_id=source.session_id,
             execution_id=source.execution_id,
             inputs=NodeExecutorInputs(_inputs=inputs),
-            # executions=Node._graph_executions[source.execution_id],
             execution=Node._workflow[source.session_id][source.execution_id],
             routing=NodeExecutorRouting(choices={n.name: NodeIOStatus() for n in self._output_nodes}),
             config=self.config
         )
 
-        # if source.session_id not in self._sessions_executor_fields:
-        #     self._sessions_executor_fields[source.session_id] = []
-
-        # executor.inject_custom_fields(self._sessions_executor_fields[source.session_id])
         executor.inject_custom_fields(
             Node._workflow[source.session_id][source.execution_id]
             .nodes_executor_fields.get(self.name)
@@ -142,9 +100,6 @@ class Node(ABC):
         
         if any(r.status.execution == 'success' for r in inputs):
             executor.result = await executor.execute()
-            # self._sessions_executor_fields[source.session_id] = [
-            #     (name, getattr(executor, name)) for name in self._custom_executor_field_names
-            # ]
             Node._workflow[source.session_id][source.execution_id].nodes_executor_fields[self.name] = [
                 (name, getattr(executor, name)) for name in self._custom_executor_field_names
             ]
@@ -159,8 +114,6 @@ class Node(ABC):
             result=executor.result,
             status=NodeIOStatus(execution=execution_status, message=''),
         )
-
-        # Node._graph_executions[source.execution_id] = output
         Node._workflow.add_execution(output)
 
         forward_nodes = [
@@ -170,21 +123,14 @@ class Node(ABC):
                     result=executor.result,
                     status=executor.routing.choices[node.name],
                 )
-            )
-            for node in self._output_nodes
+            ) for node in self._output_nodes
         ]
-
         if forward_nodes:
             return sum(await asyncio.gather(*forward_nodes), [])
-        
         return [output]
+        # return sum(await asyncio.gather(*forward_nodes), []) or [output]
     
     async def run(self, input: NodeIO) -> list[NodeIO]:
-        # if not Node._ttl_trigger_active:
-        #     asyncio.create_task(Node._graph_executions._ttl_trigger())
-        #     Node._ttl_trigger_active = True
-
-        
         if not Node._workflow.active:
             asyncio.create_task(Node._workflow.start())
             Node._workflow.active = True
@@ -198,12 +144,9 @@ class Node(ABC):
         sid = input.source.session_id
         eid = input.source.execution_id
         
-        # if eid in self._running_executions:
-        #     return []
         if self.name in Node._workflow[sid][eid].running_nodes:
             return []
         
-        # async with self._running_execution(execution_id=eid):
         async with Node._workflow[sid][eid].running_node(node_name=self.name):
             run_inputs = await self._inputs_queue.get(eid)
             output = await self._start(

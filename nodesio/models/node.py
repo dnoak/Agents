@@ -103,46 +103,13 @@ class NodeExecutorRouting:
                 raise ValueError(f'Node `{node}` is not a valid routing in {list(self.choices.keys())}.')
             self.choices[node].execution = 'skipped'
 
-# @dataclass
-# class NodesExecutions:
-#     ttl: float
-
-#     def  __post_init__(self):
-#         self.executions: dict[str, dict[str, NodeIO]] = defaultdict(dict)
-#         # self.executions: dict[str, dict[str, NodeIO]] = {}
-#         self.last_updates: dict[str, float] = {}
-
-#     def __len__(self):
-#         return len(self.executions)
-    
-#     def __getitem__(self, execution_id: str) -> dict[str, NodeIO]:
-#         if execution_id not in self.executions:
-#             self.executions[execution_id] = {}
-#         return self.executions[execution_id]
-    
-#     def __setitem__(self, execution_id: str, node_output: NodeIO):
-#         self.executions[execution_id][node_output.source.node.name] = node_output # type: ignore
-#         self.last_updates[execution_id] = time.time()
-    
-#     async def _ttl_trigger(self):
-#         while True:
-#             await asyncio.sleep(self.ttl)
-#             now = time.time()
-#             expired_executions = [
-#                 k for k, v in self.last_updates.items() if
-#                 v + self.ttl < now
-#             ]
-#             for execution_id in expired_executions:
-#                 del self.executions[execution_id]
-#                 del self.last_updates[execution_id]
-
-
 @dataclass
 class NodeExecutorConfig:
     execution_ttl: float = 300
 
 @dataclass
-class NotProcessed: ...
+class NotProcessed:
+    pass
 _NotProcessed = NotProcessed()
 
 @dataclass
@@ -177,45 +144,62 @@ class NodeExecutor:
     async def execute(self) -> Any:
         raise NotImplementedError('Replace this method with your own logic')
 
-class NodeAttributes:
-    @property
-    def digraph_graph(self) -> dict:
-        return {
-            'size': '500,500',
-            'bgcolor': '#353B41',
-        }
-    
-    @property
-    def digraph_node(self) -> dict:
-        return {
-            'shape': 'plaintext',
-            'color': '#e6e6e6'  
-        }
-    
-    def node_label(
-            self,
-            name: str, 
-            output_schema: Any,
-            running: bool = False,
-        ) -> str:
-        node_color = '#228B22' if running else 'royalblue'
-        return f'''
-        <<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0">
-            <TR>
-                <TD COLSPAN="1" BGCOLOR="{node_color}">
-                    <FONT POINT-SIZE="20.0" COLOR="white">{name}</FONT>
-                </TD>
-            </TR>
-            <TR>
-                <TD PORT="here" BGCOLOR="#444444">
-                    <FONT POINT-SIZE="12.0" COLOR="white">{output_schema.__name__}</FONT>
-                </TD>
-            </TR>
-        </TABLE>>'''.strip()
+class GraphvizAttributes:
+    def html_plot(self, svg: str) -> str:
+        return f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>Workflow</title>
+                <style>
+                    body {{ margin:0; background:#353B41; }}
+                    svg {{ width:100vw; height:100vh; }}
+                </style>
+            </head>
+            <body>
+                {svg}
+            </body>
+            </html>
+            """
 
-    def edge(self, running: bool = False) -> dict:
+    def graph(self) -> dict:
         return {
-            'style': 'bold',
-            'color': 'green' if running else '#e6e6e6',
-            'fontcolor': 'green' if running else '#e6e6e6',
+            'bgcolor': '#353B41',
+            'rankdir': 'LR',
+            'nodesep': '0.9',
+            'ranksep': '1.2',
+            'fontname': 'Helvetica',
+        }
+    
+    def node(self, name: str, output_schema: Any) -> dict:
+        return {
+            'shape': 'record',
+            'color': 'royalblue',
+            'style': 'rounded,filled',
+            'label': f"""
+                <<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+                    <TR>
+                        <TD COLSPAN="1" BGCOLOR="royalblue">
+                            <FONT POINT-SIZE="50.0" COLOR="white">{name}</FONT>
+                        </TD>
+                    </TR>
+                    <TR>
+                        <TD PORT="here" BGCOLOR="#444444">
+                            <FONT POINT-SIZE="30.0" COLOR="white">{output_schema.__name__}</FONT>
+                        </TD>
+                    </TR>
+                </TABLE>>
+            """.strip(),
+        }
+
+    def edge(self, output_schema: Any) -> dict:
+        return {
+            # 'label': output_schema.__name__,
+            # 'labelfloat': 'true',
+            'color': '#a9a9a9',
+            'fontcolor': '#ffffff',
+            'penwidth': '1.4',
+            'fontsize': '11',
+            'fontname': 'Helvetica',
         }

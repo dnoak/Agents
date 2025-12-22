@@ -31,7 +31,7 @@ b.connect(c)
 # e.connect(g)
 # f.connect(g)
 # 
-#a.plot(sleep=0.5)
+a.plot(sleep=0.5)
 
 # print(a.config)
 
