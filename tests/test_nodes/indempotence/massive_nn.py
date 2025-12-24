@@ -12,7 +12,7 @@ from itertools import combinations
 @dataclass
 class NeuronInput(Node):
     config = NodeExecutorConfig(execution_ttl=3)
-    
+
     async def execute(self) -> float:
         return self.inputs[NodeExternalInput].result
 
@@ -20,8 +20,8 @@ class NeuronInput(Node):
 class Neuron(Node):
     w: np.ndarray
     b: float
-    config = NodeExecutorConfig(execution_ttl=3)
-
+    # config = NodeExecutorConfig(execution_ttl=3)
+    
     async def execute(self) -> float:
         x = np.array(self.inputs.results)
         z = x @ self.w + self.b
@@ -96,8 +96,8 @@ def batch_runs(mlp, label: str, runs: int):
 
 async def main():
     
-    batches = 1
-    runs_per_batch = 1
+    batches = 10
+    runs_per_batch = 100
     nn_architecture = [4, 10, 10, 10, 10, 10, 10, 10, 4, 10, 1, 10, 1, 10, 1]
     # nn_architecture = [4, 5, 5, 5, 5, 1]
     # nn_architecture = [2,500,500,500,500,500] # 1 mi

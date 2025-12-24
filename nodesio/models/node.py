@@ -49,6 +49,9 @@ class NodeExecutorInputs:
         raise KeyError(
             f'Input `{node_name}` not found. Available inputs are {list(self._dict_inputs.keys())}'
         )
+    
+    def __len__(self):
+        return len(self._dict_inputs)
 
     def __iter__(self):
         return iter(self._dict_inputs.values())
@@ -125,20 +128,19 @@ class NodeExecutor:
     def __post_init__(self):
         self.result: Any = _NotProcessed
 
-    def _set_attr_deepcopy(self, field: str):
-        setattr(self, field, copy.deepcopy(getattr(self.node, field)))
-    
-    def inject_custom_fields(self, fields: list[tuple[str, Any]] | None) -> 'NodeExecutor':
-        # print(f'🟢 Injecting custom fields on {self.node.name}')
-        # print(fields)
-        if fields is None:
-            for f in self.node._custom_executor_field_names:
-                setattr(self, f, copy.deepcopy(getattr(self.node, f)))
+    def inject_custom_fields(
+            self, 
+            attributes: list[tuple[str, Any]] | None,
+            methods: set[str]
+        ) -> 'NodeExecutor':
+        if attributes is None:
+            for name in self.node._custom_executor_field_names:
+                setattr(self, name, copy.deepcopy(getattr(self.node, name)))
         else:
-            for name, value in fields:
+            for name, value in attributes:
                 setattr(self, name, value)
-        
-        self.execute = MethodType(self.node.execute.__func__, self)
+        for name in methods:
+            setattr(self, name, MethodType(getattr(self.node, name).__func__, self))
         return self
     
     async def execute(self) -> Any:
@@ -171,8 +173,18 @@ class GraphvizAttributes:
             'ranksep': '1.2',
             'fontname': 'Helvetica',
         }
-    
-    def node(self, name: str, output_schema: Any) -> dict:
+
+    def node(self, name: str, output_schema: str, tools: set[str]) -> dict:
+        table = '\n'.join([
+            f"""
+            <TR>
+                <TD PORT="here" BGCOLOR={"\"#2954A5\"" if i%2==0 else "\"#1F458C\""}>
+                    <FONT POINT-SIZE="20.0" COLOR="white">{tool}</FONT>
+                </TD>
+            </TR>
+            """.strip()
+            for i, tool in enumerate(tools)
+        ])
         return {
             'shape': 'record',
             'color': 'royalblue',
@@ -184,9 +196,10 @@ class GraphvizAttributes:
                             <FONT POINT-SIZE="50.0" COLOR="white">{name}</FONT>
                         </TD>
                     </TR>
+                    {table}
                     <TR>
-                        <TD PORT="here" BGCOLOR="#444444">
-                            <FONT POINT-SIZE="30.0" COLOR="white">{output_schema.__name__}</FONT>
+                        <TD COLSPAN="1" BGCOLOR="#DA4933">
+                            <FONT POINT-SIZE="30.0" COLOR="white">{output_schema}</FONT>
                         </TD>
                     </TR>
                 </TABLE>>
@@ -198,7 +211,7 @@ class GraphvizAttributes:
             # 'label': output_schema.__name__,
             # 'labelfloat': 'true',
             'color': '#a9a9a9',
-            'fontcolor': '#ffffff',
+            'fontcolor': "#FFFFFF",
             'penwidth': '1.4',
             'fontsize': '11',
             'fontname': 'Helvetica',

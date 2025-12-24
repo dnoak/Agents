@@ -78,7 +78,7 @@ async def main():
 
     nx, ny = nn()
 
-    xy = [(round(random.uniform(-4, 4),2), round(random.uniform(-4, 4),2)) for _ in range(10)]
+    xy = [(round(random.uniform(-4, 4),2), round(random.uniform(-4, 4),2)) for _ in range(100)]
     outputs = []
     real_outputs = []
     for i, (x, y) in enumerate(xy):
@@ -98,7 +98,9 @@ async def main():
         real_outputs.append(neuron(x, y)[0])
 
     # 🔴 breaking the order of inputs arrival
+
     random.shuffle(outputs)
+    nx.plot()
 
     node_outputs: list[NodeIO] = sum(await asyncio.gather(*outputs), [])
     node_outputs.sort(key=lambda x: int(x.source.execution_id))

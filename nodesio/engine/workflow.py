@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+import dataclasses
 from io import BytesIO
 import tempfile
 import time
@@ -12,6 +13,7 @@ from rich import print
 from PIL import Image
 if TYPE_CHECKING:
     from nodesio.models.node import NodeIO, GraphvizAttributes
+    from nodesio.engine.node import Node
 
 @dataclass
 class ExecutionMemory:
@@ -20,9 +22,9 @@ class ExecutionMemory:
 
 @dataclass
 class Execution:
-    id: str
+    id: str 
     nodes: dict[str, 'NodeIO'] = field(default_factory=dict)
-    nodes_executor_fields: dict[str, list[tuple[str, Any]]] = field(default_factory=dict)
+    executor_attributes: dict[str, list[tuple[str, Any]]] = field(default_factory=dict)
     memory: ExecutionMemory = field(default_factory=ExecutionMemory)
     running_nodes: set[str] = field(default_factory=set)
 
@@ -51,19 +53,38 @@ class Workflow:
     graphviz_attributes: 'GraphvizAttributes'
 
     def __post_init__(self):
-        self.node_names: list[str] = []
+        self.nodes: list[Node] = []
         self.sessions: dict[str, Session] = {}
         self.active: bool = False
-        self.graph: graphviz.Digraph = graphviz.Digraph(
+    
+    def create_graph(self):
+        graph: graphviz.Digraph = graphviz.Digraph(
             graph_attr=self.graphviz_attributes.graph()
         )
+        for node in self.nodes:
+            graph.node(
+                name=node.name,
+                **self.graphviz_attributes.node(
+                    name=node.name, 
+                    output_schema=node._output_schema.__name__,
+                    tools=node._custom_executor_method_names - {'execute'},
+                )
+            )
+            for output_node in node._output_nodes:
+                graph.edge(
+                    tail_name=node.name,
+                    head_name=output_node.name,
+                    **self.graphviz_attributes.edge(node._output_schema)
+                )
+        return graph
 
     def plot(self, mode: Literal['html', 'image'] = 'image', wait: float = 0.2):
+        graph = self.create_graph()
         if mode == 'image':
-            Image.open(BytesIO(self.graph.pipe(format='png'))).show(title='Workflow')
+            Image.open(BytesIO(graph.pipe(format='png'))).show(title='Workflow')
             time.sleep(wait)
         elif mode == 'html':
-            svg = self.graph.pipe(format='svg').decode('utf-8')
+            svg = graph.pipe(format='svg').decode('utf-8')
             html = self.graphviz_attributes.html_plot(svg)
             with tempfile.NamedTemporaryFile(
                     mode="w",

@@ -15,7 +15,6 @@ class NodeInputsQueue:
         self.futures: dict[str, asyncio.Future[list[NodeIO]]] = {}
         self.pending: defaultdict[str, dict[str, NodeIO]] = defaultdict(dict)
         self.required_inputs: defaultdict[str, set[str]] = defaultdict(set)
-        self.sort_order: list[str] = []
     
     def put(self, input: NodeIO):
         if input.source.node is None:
@@ -48,6 +47,6 @@ class NodeInputsQueue:
         result = self.futures.pop(execution_id).result()
         if len(result) == 1:
             return result
-        
-        return sorted(result, key=lambda x: self.sort_order.index(x.source.node.name))
+        order = [i.name for i in self.node._input_nodes]
+        return sorted(result, key=lambda x: order.index(x.source.node.name))
         

@@ -11,11 +11,16 @@ import asyncio
 import numpy as np
 from rich import print
 
-
 @dataclass
-class Alphabet(Node):
+class   Alphabet(Node):
     track: list[str] = field(default_factory=list)
     # config = NodeExecutorConfig(execution_ttl=1)
+    
+    async def tool2(self):
+        return 1
+    
+    async def tool(self) -> list[str]:
+        return sum(self.inputs.results, []) + self.track
 
     async def execute(self) -> list[str]:
         await asyncio.sleep(random.uniform(0, 1))
@@ -25,20 +30,24 @@ class Alphabet(Node):
         sess_emoji = {'s1': '🟢', 's2': '🔴', 's3': '🟡'}[self.session_id]
         print(f'{sess_emoji} {self.name}_{self.session_id}_{self.execution_id}')
         self.track.append(f'{self.name}_{self.session_id}_{self.execution_id}')
-        return sum(self.inputs.results, []) + self.track
+        return await self.tool()
 
 a = Alphabet(name='a')
-b = Alphabet(name='bb')
-c = Alphabet(name='ccc')
-d = Alphabet(name='dddd')
-e = Alphabet(name='eeeee')
-f = Alphabet(name='ffffff')
-g = Alphabet(name='gggggg')
+b = Alphabet(name='b')
+c = Alphabet(name='c')
+d = Alphabet(name='d')
+e = Alphabet(name='e')
+f = Alphabet(name='f')
+g = Alphabet(name='g')
 
 a.connect(b)
 a.connect(c)
 b.connect(d)
 c.connect(d)
+d.connect(e)
+e.connect(f)
+d.connect(g)
+f.connect(g)
 
 a.plot()
 
