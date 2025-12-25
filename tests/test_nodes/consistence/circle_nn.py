@@ -21,7 +21,7 @@ class NeuronInput(Node):
 class Neuron(Node):
     w: list[float]
     b: float
-
+    
     async def execute(self) -> float:
         # 🔴 changing values in concurrent executions #
         b = self.b

@@ -38,7 +38,7 @@ class Node(NodeInterface):
 
     def __post_init__(self):
         self.config = self.config if hasattr(self, 'config') else NodeExecutorConfig()
-        self._output_schema = get_type_hints(self.execute)['return']
+        self._output_schema = get_type_hints(self.execute).get('return')
         self._inputs_queue: NodeInputsQueue = NodeInputsQueue(node=self)
         self._input_nodes: list[Node] = []
         self._output_nodes: list[Node] = []
@@ -50,17 +50,14 @@ class Node(NodeInterface):
             {n[0] for n in inspect.getmembers(self, inspect.ismethod) if not n[0].startswith('_')},
             {'connect', 'plot', 'run'}
         )
-        self._init_workflow()
-        self._insert_node()
+        self._set_workflow()
 
-    def _init_workflow(self):
+    def _set_workflow(self):
         if not hasattr(Node, '_workflow'):
             Node._workflow = Workflow(
                 session_ttl=self.config.execution_ttl,
                 graphviz_attributes=GraphvizAttributes(),
             )
-        
-    def _insert_node(self):
         if self.name in Node._workflow.nodes:
             raise ValueError(f'Node name `{self.name}` already exist in Workflow')
         Node._workflow.nodes.append(self)
@@ -87,7 +84,7 @@ class Node(NodeInterface):
             ),
             config=self.config
         )
-
+        
         executor.inject_custom_fields(
             attributes=Node._workflow[sid][eid].executor_attributes.get(self.name),
             methods=self._custom_executor_method_names

@@ -27,7 +27,7 @@ class Execution:
     executor_attributes: dict[str, list[tuple[str, Any]]] = field(default_factory=dict)
     memory: ExecutionMemory = field(default_factory=ExecutionMemory)
     running_nodes: set[str] = field(default_factory=set)
-
+    
     @asynccontextmanager
     async def running_node(self, node_name: str):
         self.running_nodes.add(node_name)
