@@ -1,16 +1,11 @@
 import time
 import datetime
 import asyncio
+from dataclasses import dataclass, make_dataclass
+import dataclasses
+from rich import print
+from nodesio.engine.node import Node
 
-async def a():
-    return ['a']
+n = type('Node', (Node,), {})
 
-async def main():
-    x = [a()]
-    y = ['y']
-
-    res = sum(await asyncio.gather(*x), [])
-    # print(res)
-    return res or y
-
-print(asyncio.run(main()))
+nodex = n(name='nodex', _constructor_node=False)

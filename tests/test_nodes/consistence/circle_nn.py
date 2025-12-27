@@ -14,27 +14,27 @@ from rich import print
 
 @dataclass
 class NeuronInput(Node):
-    async def execute(self) -> float:
-        return self.inputs[NodeExternalInput].result
+    async def execute(self, ctx) -> float:
+        return ctx.inputs[NodeExternalInput].result
 
 @dataclass
 class Neuron(Node):
     w: list[float]
     b: float
     
-    async def execute(self) -> float:
+    async def execute(self, ctx) -> float:
         # 🔴 changing values in concurrent executions #
         b = self.b
-        w0 = self.w[0]
-        self.b = -100
-        self.w[0] = -100
+        w = self.w
+        self.b = random.random()
+        self.w = [random.random() for r in range(len(self.w))]
         # 🟡 randomizing processor order
         await asyncio.sleep(random.uniform(0, 1))
         self.b = b
-        self.w[0] = w0
+        self.w = w
         # # # # # # # # # # # # # # # # # # # # # # #
 
-        x = np.array(self.inputs.results)
+        x = np.array(ctx.inputs.results)
         z = x @ self.w + self.b
         a = max(z, 0.)
         return float(a)
@@ -100,7 +100,7 @@ async def main():
     # 🔴 breaking the order of inputs arrival
 
     random.shuffle(outputs)
-    nx.plot()
+    # nx.plot()
 
     node_outputs: list[NodeIO] = sum(await asyncio.gather(*outputs), [])
     node_outputs.sort(key=lambda x: int(x.source.execution_id))

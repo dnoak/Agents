@@ -4,6 +4,7 @@ from nodesio.models.node import (
     NodeExecutorConfig,
     NodeIO, 
     NodeIOStatus, 
+    NodeExecutorContext,
     NodeIOSource,
 )
 from dataclasses import dataclass, field
@@ -12,25 +13,26 @@ import numpy as np
 from rich import print
 
 @dataclass
-class   Alphabet(Node):
+class Alphabet(Node):
     track: list[str] = field(default_factory=list)
     # config = NodeExecutorConfig(execution_ttl=1)
     
     async def tool2(self):
         return 1
     
-    async def tool(self) -> list[str]:
-        return sum(self.inputs.results, []) + self.track
-
-    async def execute(self) -> list[str]:
-        await asyncio.sleep(random.uniform(0, 1))
-        if self.session_id == 's1':
-            await asyncio.sleep(random.uniform(0, 1))
-
-        sess_emoji = {'s1': '🟢', 's2': '🔴', 's3': '🟡'}[self.session_id]
-        print(f'{sess_emoji} {self.name}_{self.session_id}_{self.execution_id}')
-        self.track.append(f'{self.name}_{self.session_id}_{self.execution_id}')
-        return await self.tool()
+    async def tool(self, ctx) -> list[str]:
+        return ['a']
+    
+    async def execute(self, ctx: NodeExecutorContext) -> str:
+        # await asyncio.sleep(random.uniform(0, 1))
+        # if ctx.session_id == 's1':
+        #     await asyncio.sleep(random.uniform(0, 1))
+        print(f'{self.name=}')
+        print(f'{ctx.inputs.results}\n')
+        # sess_emoji = {'s1': '🟢', 's2': '🔴', 's3': '🟡'}[ctx.session_id]
+        # print(f'{sess_emoji} {self.name}_{ctx.session_id}_{ctx.execution_id}')
+        self.track.append(f'{self.name}_{ctx.session_id}_{ctx.execution_id}')
+        return '->'.join(ctx.inputs.results + [self.name])
 
 a = Alphabet(name='a')
 b = Alphabet(name='b')
@@ -55,22 +57,22 @@ async def main():
     runs = [
         a.run(NodeIO(
             source=NodeIOSource(session_id=f's1', execution_id=f'1', node=None),
-            result=[],
+            result='🟢',
             status=NodeIOStatus(),
         )),
         a.run(NodeIO(
-            source=NodeIOSource(session_id=f's1', execution_id=f'2', node=None),
-            result=[],
+            source=NodeIOSource(session_id=f's2', execution_id=f'1', node=None),
+            result='🔴',
             status=NodeIOStatus(),
         )),
-        a.run(NodeIO(
-            source=NodeIOSource(session_id=f's1', execution_id=f'3', node=None),
-            result=[],
-            status=NodeIOStatus(),  
-        ))
+        # a.run(NodeIO(
+        #     source=NodeIOSource(session_id=f's1', execution_id=f'1', node=None),
+        #     result=[],
+        #     status=NodeIOStatus(),  
+        # ))
     ]
     print(sum(await asyncio.gather(*runs), []))
 
     
-# asyncio.run(main())
+asyncio.run(main())
 

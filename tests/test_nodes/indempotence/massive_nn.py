@@ -13,8 +13,8 @@ from itertools import combinations
 class NeuronInput(Node):
     config = NodeExecutorConfig(execution_ttl=3)
 
-    async def execute(self) -> float:
-        return self.inputs[NodeExternalInput].result
+    async def execute(self, ctx) -> float:
+        return ctx.inputs[NodeExternalInput].result
 
 @dataclass
 class Neuron(Node):
@@ -22,8 +22,8 @@ class Neuron(Node):
     b: float
     # config = NodeExecutorConfig(execution_ttl=3)
     
-    async def execute(self) -> float:
-        x = np.array(self.inputs.results)
+    async def execute(self, ctx) -> float:
+        x = np.array(ctx.inputs.results)
         z = x @ self.w + self.b
         a = max(z, 0.)
         return float(a)
@@ -74,13 +74,13 @@ def batch_runs(mlp, label: str, runs: int):
     np.random.seed(0)
     multiple_runs = []
     session_ids = [f'user_nn_{i}' for i in range(50)]
-
+    
     for run in range(runs):
-        random_session_id = random.choice(session_ids)
+        # random_session_id = random.choice(session_ids)
         for input in mlp[0]:
             multiple_runs.append(input.run(NodeIO(
                 source=NodeIOSource(
-                    session_id=random_session_id,
+                    session_id=str(run),
                     execution_id=f'{label}_{run}',
                     node=None
                 ),
@@ -96,17 +96,17 @@ def batch_runs(mlp, label: str, runs: int):
 
 async def main():
     
-    batches = 10
+    batches = 1
     runs_per_batch = 100
     nn_architecture = [4, 10, 10, 10, 10, 10, 10, 10, 4, 10, 1, 10, 1, 10, 1]
     # nn_architecture = [4, 5, 5, 5, 5, 1]
     # nn_architecture = [2,500,500,500,500,500] # 1 mi
     mlp = mlp_generator(f'b', nn_architecture)
-    mlp[0][0].plot(mode='image')
+    # mlp[0][0].plot(mode='html')
     
     batches_results = []
     batches_times = []
-
+    
     for b in range(batches):
         batches_runs = batch_runs(mlp, f'{b}', runs_per_batch)
         print(f'Batch {b}: ', end='')
@@ -124,7 +124,6 @@ async def main():
         assert pair[0] != pair[1]
         assert sorted(pair[0]) == sorted(pair[1])
 
-
     total_runs = batches * runs_per_batch
     total_node_runs = sum(nn_architecture) * total_runs
     total_connections = total_runs * sum(a*b for a, b in zip(nn_architecture, nn_architecture[1:]))
@@ -141,23 +140,23 @@ async def main():
     print('-'*50)
 
     sessions = len(Node._workflow.sessions)
-    executions = sum(len(v.executions) for v in Node._workflow.sessions.values())
+    # executions = sum(len(v.executions) for v in Node._workflow.sessions.values())
 
-    print(f'Sessions: {sessions}')
-    print(f'Executions: {executions}')
-    while True:
+    # print(f'Sessions: {sessions}')
+    # print(f'Executions: {executions}')
+    # while True:
 
-        updated_sessions = len(Node._workflow.sessions)
-        updated_executions = sum(len(v.executions) for v in Node._workflow.sessions.values())
-        if updated_sessions != sessions or updated_executions != executions:
-            sessions = updated_sessions
-            executions = updated_executions
-            print(f'Sessions: {sessions}')
-            print(f'Executions: {executions}')
+    #     updated_sessions = len(Node._workflow.sessions)
+    #     updated_executions = sum(len(v.executions) for v in Node._workflow.sessions.values())
+    #     if updated_sessions != sessions or updated_executions != executions:
+    #         sessions = updated_sessions
+    #         executions = updated_executions
+    #         print(f'Sessions: {sessions}')
+    #         print(f'Executions: {executions}')
         
-        if not executions and not sessions:
-            break
-        await asyncio.sleep(0.1)
+    #     if not executions and not sessions:
+    #         break
+    #     await asyncio.sleep(0.1)
 
 
 asyncio.run(main())

@@ -10,6 +10,7 @@ from types import MethodType
 from abc import ABC
 from dataclasses import dataclass
 from nodesio.engine.workflow import Execution
+import nodesio.engine.node as nodesio_engine
 if TYPE_CHECKING:
     from nodesio.engine.node import Node
 
@@ -42,7 +43,7 @@ class NodeExecutorInputs:
             else NodeExternalInput:
             i for i in self._inputs
         }
-
+    
     def __getitem__(self, node_name: str) -> NodeIO:
         if node_name in self._dict_inputs:
             return self._dict_inputs[node_name]
@@ -116,35 +117,42 @@ class NotProcessed:
 _NotProcessed = NotProcessed()
 
 @dataclass
-class NodeExecutor:
-    node: 'Node'
-    session_id: str
-    execution_id: str
+class NodeExecutorContext:
     inputs: NodeExecutorInputs
-    execution: Execution
+    execution_id: str
+    session_id: str
     routing: NodeExecutorRouting
-    config: NodeExecutorConfig
-    
-    def __post_init__(self):
-        self.result: Any = _NotProcessed
 
-    def inject_custom_fields(
-            self, 
-            attributes: list[tuple[str, Any]] | None,
-            methods: set[str]
-        ) -> 'NodeExecutor':
-        if attributes is None:
-            for name in self.node._custom_executor_field_names:
-                setattr(self, name, copy.deepcopy(getattr(self.node, name)))
-        else:
-            for name, value in attributes:
-                setattr(self, name, value)
-        for name in methods:
-            setattr(self, name, MethodType(getattr(self.node, name).__func__, self))
-        return self
+# @dataclass
+# class NodeExecutor:
+#     node: 'Node'
+#     session_id: str
+#     execution_id: str
+#     inputs: NodeExecutorInputs
+#     execution: Execution
+#     routing: NodeExecutorRouting
+#     config: NodeExecutorConfig
     
-    async def execute(self) -> Any:
-        raise NotImplementedError('Replace this method with your own logic')
+#     def __post_init__(self):
+#         self.result: Any = _NotProcessed
+
+#     def inject_custom_fields(
+#             self, 
+#             attributes: list[tuple[str, Any]] | None,
+#             methods: set[str]
+#         ) -> 'NodeExecutor':
+#         if attributes is None:
+#             for name in self.node._custom_executor_field_names:
+#                 setattr(self, name, copy.deepcopy(getattr(self.node, name)))
+#         else:
+#             for name, value in attributes:
+#                 setattr(self, name, value)
+#         for name in methods:
+#             setattr(self, name, MethodType(getattr(self.node, name).__func__, self))
+#         return self
+    
+#     async def execute(self) -> Any:
+#         raise NotImplementedError('Replace this method with your own logic')
 
 class GraphvizAttributes:
     def html_plot(self, svg: str) -> str:
