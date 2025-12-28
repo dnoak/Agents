@@ -9,12 +9,22 @@ from typing import Any, TYPE_CHECKING, Literal, overload
 from types import MethodType
 from abc import ABC
 from dataclasses import dataclass
-from nodesio.engine.workflow import Execution
 import nodesio.engine.node as nodesio_engine
 if TYPE_CHECKING:
     from nodesio.engine.node import Node
+    from nodesio.engine.workflow import Execution, Session
 
 NodeExternalInput = '__input__'
+
+@dataclass
+class NotProcessed:
+    pass
+_NotProcessed = NotProcessed()
+
+@dataclass
+class NodeExecutorConfig:
+    # execution_ttl: float = 300
+    ...
 
 @dataclass
 class NodeIOStatus:
@@ -108,51 +118,13 @@ class NodeExecutorRouting:
             self.choices[node].execution = 'skipped'
 
 @dataclass
-class NodeExecutorConfig:
-    execution_ttl: float = 300
-
-@dataclass
-class NotProcessed:
-    pass
-_NotProcessed = NotProcessed()
-
-@dataclass
 class NodeExecutorContext:
     inputs: NodeExecutorInputs
-    execution_id: str
-    session_id: str
+    session: 'Session'
+    execution: 'Execution'
+    # execution_id: str
+    # session_id: str
     routing: NodeExecutorRouting
-
-# @dataclass
-# class NodeExecutor:
-#     node: 'Node'
-#     session_id: str
-#     execution_id: str
-#     inputs: NodeExecutorInputs
-#     execution: Execution
-#     routing: NodeExecutorRouting
-#     config: NodeExecutorConfig
-    
-#     def __post_init__(self):
-#         self.result: Any = _NotProcessed
-
-#     def inject_custom_fields(
-#             self, 
-#             attributes: list[tuple[str, Any]] | None,
-#             methods: set[str]
-#         ) -> 'NodeExecutor':
-#         if attributes is None:
-#             for name in self.node._custom_executor_field_names:
-#                 setattr(self, name, copy.deepcopy(getattr(self.node, name)))
-#         else:
-#             for name, value in attributes:
-#                 setattr(self, name, value)
-#         for name in methods:
-#             setattr(self, name, MethodType(getattr(self.node, name).__func__, self))
-#         return self
-    
-#     async def execute(self) -> Any:
-#         raise NotImplementedError('Replace this method with your own logic')
 
 class GraphvizAttributes:
     def html_plot(self, svg: str) -> str:
@@ -216,8 +188,6 @@ class GraphvizAttributes:
 
     def edge(self, output_schema: Any) -> dict:
         return {
-            # 'label': output_schema.__name__,
-            # 'labelfloat': 'true',
             'color': '#a9a9a9',
             'fontcolor': "#FFFFFF",
             'penwidth': '1.4',

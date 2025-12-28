@@ -1,0 +1,68 @@
+import random
+import time
+from typing import ClassVar
+from nodesio.models.node import NodeIO, NodeIOStatus, NodeExecutorConfig, NodeExternalInput, NodeIOSource
+from nodesio.engine.node import Node
+from dataclasses import dataclass, field
+import asyncio
+import numpy as np
+from rich import print
+
+@dataclass
+class Alphabet(Node):
+    async def execute(self, ctx) -> str:
+        await asyncio.sleep(random.uniform(0, 3))
+        return self.name
+
+a = Alphabet(name='a')
+b = Alphabet(name='b')
+c = Alphabet(name='c')
+d = Alphabet(name='d')
+e = Alphabet(name='e')
+f = Alphabet(name='f')
+g = Alphabet(name='g')
+
+a.connect(b)
+b.connect(c)
+a.connect(d)
+d.connect(e)
+d.connect(f)
+c.connect(g)
+e.connect(g)
+f.connect(g)
+
+# a.plot()
+
+a._workflow.sessions_ttl = 30
+
+batches = [f'batch_{i}' for i in range(3)]
+session_ids = [f'sid_{i}' for i in range(10)]
+
+async def main():
+    for eid in batches:
+        print(f'Batch: {eid}')
+        runs = []
+        for sid in session_ids:
+            if random.choice([True, False]):
+                runs.append(a.run(NodeIO(
+                    source=NodeIOSource(session_id=sid, execution_id=eid, node=None),
+                    result='__start__',
+                    status=NodeIOStatus(),
+                )))
+
+        res = sum(await asyncio.gather(*runs), [])
+        print(res)
+    
+    while True:
+        await asyncio.sleep(0.2)
+        print('-'*50)
+        for session in a._workflow._sessions.values():
+            execs = ','.join([
+                execution.id.replace('batch_', '')
+                for execution in session._executions.values()
+            ])
+            print(f'Session: {session.id}, execs: {execs}')
+            
+
+asyncio.run(main())
+    

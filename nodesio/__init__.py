@@ -6,7 +6,6 @@ from .models.node import (
     NodeIOSource,
     NodeExecutorRouting,
     NodeExecutorInputs,
-    # NodesExecutions,
     NodeExecutorConfig,
     NodeExternalInput
 )
@@ -19,7 +18,6 @@ __all__ = [
     'NodeIOSource',
     'NodeExecutorRouting',
     'NodeExecutorInputs',
-    # 'NodesExecutions',
     'NodeExecutorConfig',
     'NodeExternalInput',
 ]

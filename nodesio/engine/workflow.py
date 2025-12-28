@@ -7,16 +7,16 @@ from io import BytesIO
 import tempfile
 import time
 from types import MethodType
-from typing import Any, TYPE_CHECKING, Literal
+from typing import Any, TYPE_CHECKING, Iterator, Literal
 import webbrowser
 import graphviz
 from collections import deque
 from rich import print
 from PIL import Image
 import nodesio.engine.node as nodesio_engine
+from nodesio.models.node import NodeIO, GraphvizAttributes
 if TYPE_CHECKING:
     from nodesio.engine.node import Node
-    from nodesio.models.node import NodeIO, GraphvizAttributes
 
 @dataclass
 class SessionMemory:
@@ -28,59 +28,61 @@ class SessionMemory:
 class Execution:
     id: str 
     nodes: dict[str, 'NodeIO'] = field(default_factory=dict)
-    running_nodes: set[str] = field(default_factory=set)
     
-    @asynccontextmanager
-    async def running_node(self, node_name: str):
-        self.running_nodes.add(node_name)
-        yield
-        self.running_nodes.remove(node_name)
+    def __getitem__(self, node_name: str) -> 'NodeIO':
+        return self.nodes[node_name]
+    
+    def __setitem__(self, execution_id: str, result: 'NodeIO'):
+        self.nodes[execution_id] = result
+
+    def __iter__(self) -> Iterator['NodeIO']:
+        return iter(self.nodes.values())
 
 @dataclass
-class Executions:
-    _executions: dict[str, Execution]
+class Session:
+    id: str
+    nodes: dict[str, 'Node']
+    memory: SessionMemory = field(default_factory=SessionMemory)
+    _executions: dict[str, Execution] = field(default_factory=dict)
+    _last_updated: int = field(default_factory=time.monotonic_ns)
     
-    def __getitem__(self) -> Execution:
-        ...
-
-# @dataclass
-# class Session:
-#     # id: str
-#     # executions: dict[str, Execution] = field(default_factory=dict)
-#     # memory: SessionMemory = field(default_factory=SessionMemory)
-#     # updated_at: float = field(default_factory=time.time)
-
-#     def create_session(
-#             self,
-#             base_nodes: dict[str, Node],
-#             connections_schema: dict[Literal['inputs'] | Literal['outputs'], str]    
-#         ):
-
-#     def __getitem__(self, session_id: str) -> Node:
-#         session = self._sessions.get(session_id)
+    def __getitem__(self, execution_id: str) -> Execution:
+        self._last_updated = time.monotonic_ns()
+        if execution_id not in self._executions:
+            self._executions[execution_id] = Execution(id=execution_id)
+        return self._executions[execution_id]
+    
+    def __setitem__(self, execution_id: str, execution: Execution):
+        self._executions[execution_id] = execution
+    
+    def __iter__(self) -> Iterator[Execution]:
+        return iter(self._executions.values())
 
 @dataclass
 class Workflow:
-    session_ttl: float
-    graphviz_attributes: 'GraphvizAttributes'
-    
     def __post_init__(self):
-        self.sessions: dict[str, dict[str, 'Node']] = {}
-        self.active: bool = False
+        self.is_active: bool = False
+        self.sessions_ttl: float | None = 300 
+        self._sessions: dict[str, Session] = {}
+        self._graphviz_attributes: GraphvizAttributes = GraphvizAttributes()
         self._constructor_nodes: list['Node'] = []
-        self._node_factory = type('_', (nodesio_engine.Node,), {})
+        self._node_factory = type('Node', (nodesio_engine.Node,), {'execute': None})
 
     def __contains__(self, session_id: str):
-        return session_id in self.sessions
+        return session_id in self._sessions
 
-    def __getitem__(self, session_id: str) -> dict[str, 'Node']:
-        return self.sessions[session_id]
+    def __getitem__(self, session_id: str) -> Session:
+        return self._sessions[session_id]
     
-    def create_session(self, session_id: str):
-        session_nodes: dict[str, 'Node'] = {
-            node.name: self._node_factory(name=node.name, _constructor_node=False)
-            for node in self._constructor_nodes
-        }
+    def create_session(self, session_id: str) -> Session:
+        session_nodes: dict[str, 'Node'] = {}
+        for node in self._constructor_nodes:
+            self._node_factory.__name__ = node.__class__.__name__
+            session_nodes[node.name] = self._node_factory(
+                name=node.name, 
+                _constructor_node=False
+            )
+
         for cnode in self._constructor_nodes:
             snode = session_nodes[cnode.name]
             for attr_name in cnode._custom_attr_names:
@@ -97,16 +99,17 @@ class Workflow:
                 snode._input_nodes.append(session_nodes[constructor_input.name])
             for constructor_output in cnode._output_nodes:
                 snode._output_nodes.append(session_nodes[constructor_output.name])
-        self.sessions[session_id] = session_nodes
+        self._sessions[session_id] = Session(id=session_id, nodes=session_nodes)
+        return self._sessions[session_id]
     
     def create_graph(self):
         graph: graphviz.Digraph = graphviz.Digraph(
-            graph_attr=self.graphviz_attributes.graph()
+            graph_attr=self._graphviz_attributes.graph()
         )
         for node in self._constructor_nodes:
             graph.node(
                 name=node.name,
-                **self.graphviz_attributes.node(
+                **self._graphviz_attributes.node(
                     name=node.name,
                     output_schema=node._output_schema.__name__,
                     tools=node._custom_methods_names - {'execute'},
@@ -116,7 +119,7 @@ class Workflow:
                 graph.edge(
                     tail_name=node.name,
                     head_name=output_node.name,
-                    **self.graphviz_attributes.edge(node._output_schema)
+                    **self._graphviz_attributes.edge(node._output_schema)
                 )
         return graph
 
@@ -127,7 +130,7 @@ class Workflow:
             time.sleep(wait)
         elif mode == 'html':
             svg = graph.pipe(format='svg').decode('utf-8')
-            html = self.graphviz_attributes.html_plot(svg)
+            html = self._graphviz_attributes.html_plot(svg)
             with tempfile.NamedTemporaryFile(
                     mode="w",
                     suffix=".html",
@@ -140,28 +143,16 @@ class Workflow:
         else: 
             raise ValueError(f'Invalid mode `{mode}`')
     
-    # def __getitem__(self, session_id: str) -> Session:
-    #     session = self.sessions.get(session_id)
-    #     if session is None:
-    #         session = Session(id=session_id)
-    #         self.sessions[session_id] = session
-    #         return session
-    #     session.updated_at = time.time()
-    #     return session
-    
-    def add_execution(self, output: 'NodeIO'):
-        sid = output.source.session_id
-        eid = output.source.execution_id
-        self.sessions[sid].executions[eid].nodes[output.source.node.name] = output # type: ignore
-
-    # async def start(self):
-    #     while True:
-    #         await asyncio.sleep(self.session_ttl)
-    #         now = time.time()
-    #         delete = []
-    #         for session in self.sessions.values():
-    #             if session.updated_at + self.session_ttl < now:
-    #                 delete.append(session.id)
-    #         for session_id in delete:
-    #             del self.sessions[session_id]
+    async def start_ttl_trigger(self):
+        if self.sessions_ttl is None:
+            return
+        while True:
+            await asyncio.sleep(self.sessions_ttl)
+            now = time.monotonic_ns()
+            delete = []
+            for session in self._sessions.values():
+                if session._last_updated + self.sessions_ttl < now:
+                    delete.append(session.id)
+            for session_id in delete:
+                del self._sessions[session_id]
     

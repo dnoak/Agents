@@ -1,5 +1,6 @@
 import copy
 from dataclasses import dataclass, field
+import time
 from types import MethodType
 from typing import Any, Callable, Literal, get_type_hints
 from abc import ABC, abstractmethod
@@ -7,7 +8,7 @@ import dataclasses
 import asyncio
 import inspect
 from nodesio.engine.inputs_queue import NodeInputsQueue
-from nodesio.engine.workflow import Workflow
+from nodesio.engine.workflow import Workflow, Execution
 from nodesio.models.node import (
     _NotProcessed,
     GraphvizAttributes,
@@ -21,7 +22,7 @@ from nodesio.models.node import (
 )
 
 @dataclass
-class NodeInterface():
+class NodeInterface(ABC):
     @abstractmethod
     async def execute(self, ctx: NodeExecutorContext) -> Any:
         ...
@@ -53,13 +54,10 @@ class Node(NodeInterface):
             {n[0] for n in inspect.getmembers(self, inspect.ismethod) if not n[0].startswith('_')},
             {'connect', 'plot', 'run'}
         )
-        
+    
     def _set_workflow(self):
         if not hasattr(Node, '_workflow'):
-            Node._workflow = Workflow(
-                session_ttl=self.config.execution_ttl,
-                graphviz_attributes=GraphvizAttributes(),
-            )
+            Node._workflow = Workflow()
         if self.name in Node._workflow._constructor_nodes:
             raise ValueError(f'Node name `{self.name}` already exist in Workflow')
         Node._workflow._constructor_nodes.append(self)
@@ -73,10 +71,13 @@ class Node(NodeInterface):
         return node
     
     async def _start(self, source: NodeIOSource, inputs: list[NodeIO]) -> list[NodeIO]:
+        session = Node._workflow[source.session_id]
+        execution = session[source.execution_id]
+
         ctx = NodeExecutorContext(
             inputs=NodeExecutorInputs(inputs),
-            execution_id=source.execution_id,
-            session_id=source.session_id,
+            session=session,
+            execution=execution,
             routing=NodeExecutorRouting(
                 choices={n.name: NodeIOStatus() for n in self._output_nodes}
             )
@@ -94,7 +95,7 @@ class Node(NodeInterface):
             result=result,
             status=NodeIOStatus(execution=execution_status, message=''),
         )
-        # Node._workflow.add_execution(output)
+        execution[self.name] = output
 
         forward_nodes = [
             node.run(
@@ -111,14 +112,16 @@ class Node(NodeInterface):
 
     async def _run_in_session(self, input: NodeIO) -> list[NodeIO]:
         sid = input.source.session_id
-        if sid not in self._workflow.sessions:
-            self._workflow.create_session(session_id=sid)
-        return await self._workflow.sessions[sid][self.name].run(input)
+        eid = input.source.execution_id
+        if sid not in self._workflow:
+            session = self._workflow.create_session(session_id=sid)
+            session[eid] = Execution(id=eid)
+        return await self._workflow[sid].nodes[self.name].run(input)
     
     async def run(self, input: NodeIO) -> list[NodeIO]:
-        # if not Node._workflow.active:
-        #     asyncio.create_task(Node._workflow.start())
-        #     Node._workflow.active = True
+        if not Node._workflow.is_active:
+            asyncio.create_task(Node._workflow.start_ttl_trigger())
+            Node._workflow.is_active = True
 
         self._inputs_queue.put(NodeIO(
             source=input.source,

@@ -11,7 +11,7 @@ from itertools import combinations
 
 @dataclass
 class NeuronInput(Node):
-    config = NodeExecutorConfig(execution_ttl=3)
+    config = NodeExecutorConfig()
 
     async def execute(self, ctx) -> float:
         return ctx.inputs[NodeExternalInput].result
@@ -139,7 +139,7 @@ async def main():
     print(f'Time per node: {(total_time) / total_node_runs}')
     print('-'*50)
 
-    sessions = len(Node._workflow.sessions)
+    sessions = len(Node._workflow._sessions)
     # executions = sum(len(v.executions) for v in Node._workflow.sessions.values())
 
     # print(f'Sessions: {sessions}')
