@@ -126,14 +126,15 @@ async def main():
 
     total_runs = batches * runs_per_batch
     total_node_runs = sum(nn_architecture) * total_runs
-    total_connections = total_runs * sum(a*b for a, b in zip(nn_architecture, nn_architecture[1:]))
+    mlp_parameters = sum(a*b for a, b in zip(nn_architecture, nn_architecture[1:]))
     total_time = sum(batches_times)
     
     print('-'*50)
     print(f'🟢 NN Consistency Test Passed')
+    print(f'MLP parameters: {mlp_parameters}')
     print(f'Total runs: {total_runs}')
     print(f'Total node runs: {total_node_runs}')
-    print(f'Total connections: {total_connections}')
+    print(f'Total connections: {total_runs * mlp_parameters}')
     print(f'Total Time: {total_time}')
     print(f'Time per run: {(total_time) / total_runs}')
     print(f'Time per node: {(total_time) / total_node_runs}')
