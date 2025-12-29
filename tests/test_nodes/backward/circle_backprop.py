@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import random
+import time
 from typing import Any, Callable
 import uuid
 from nodesio.engine.node import Node
@@ -16,6 +17,7 @@ import numpy as np
 from rich import print
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from itertools import batched
 
 @dataclass
 class ActivationFunction:
@@ -142,23 +144,31 @@ def toggle_backward_mode(nn: list[list[Neuron] | list[NeuronInput]]):
     for node in nn[0][0]._workflow['s1'].nodes.values():
         node.toggle_backward_mode()
 
-async def plot_async(node_inputs, x, y, y_pred, square_size, pause=0.01):
-    ax.clear()
-    for (x1, x2), y, y_pred in zip(x, y, y_pred):
-        # print(f'x: ({x1:.2f}, {x2:.2f}), y: {y}, y_pred: {y_pred}')
-        rounded_y_pred = 0 if y_pred < 0.5 else 1
-        if y == rounded_y_pred:
-            ax.scatter(x1, x2, color='green', alpha=0.5)
-        else:
-            ax.scatter(x1, x2, color='red', alpha=0.5)
+def plot_circle(xy_data, y_pred, acc_loss, pause):
+    X = np.array([xy for (xy, _) in xy_data])
+    y_true = np.array([y for (_, y) in xy_data])
+    y_pred = np.array(y_pred)
 
-    ax.set_title("Treinamento em Tempo Real")
-    ax.set_xlabel("Input (x)")
-    ax.set_ylabel("Output (y)")
-    ax.set_xlim(-square_size, square_size)
-    ax.set_ylim(-square_size, square_size)
-    ax.legend()
-    plt.draw()
+    y_hat = (y_pred >= 0.5).astype(int)
+
+    TP = X[(y_true == 1) & (y_hat == 1)]
+    TN = X[(y_true == 0) & (y_hat == 0)]
+    ERR = X[y_true != y_hat]
+
+    sc_tp.set_offsets(TP)
+    sc_tn.set_offsets(TN)
+    sc_err.set_offsets(ERR)
+
+    # loss_x.append(list(range(len(acc_loss))))
+    # loss_y.append(loss)
+
+    line_loss.set_data(list(range(len(acc_loss))), acc_loss)
+
+    ax_loss.relim()
+    ax_loss.autoscale_view()
+
+    fig.canvas.draw_idle()
+    fig.canvas.flush_events()
     plt.pause(pause)
 
 
@@ -172,60 +182,76 @@ async def run(exec_id: str, node: Node, mode: str, inputs = None):
         status=NodeIOStatus(),
     ))
 
-async def train_step(nn: list[list[Neuron] | list[NeuronInput]], data):
-    
-    for epoch in range(1000):
-        x_data, y_data = data
-        x_y_data = list(zip(x_data, y_data))
-        random.shuffle(x_y_data)
-        x_data, y_data = zip(*x_y_data)
+async def train_step(nn: list[list[Neuron] | list[NeuronInput]], xy_data):
+    mini_batch_size = int(len(xy_data) * 0.1)
+    train_loss = []
+    for epoch in range(100):
+        random.shuffle(xy_data)
         
+        batch_loss = []
         y_pred = []
-        acc_loss = []
-        for xn, y in zip(x_data, y_data):
-            y_pred.append(sum(await asyncio.gather(*[
-                run(str(epoch), input_neuron, 'forward', [x])
-                for input_neuron, x in zip(nn[0], xn)
-            ]), [])[0].result[1][0])
-            # y_pred[-1] = 0 if y_pred[-1] < 0.5 else 1
-            dL = (y_pred[-1] - y)
-            toggle_backward_mode(nn)
-            await run(str(epoch), nn[-1][0], 'backward', [dL])
-            toggle_backward_mode(nn)
-
-            acc_loss.append(L2(y_pred[-1], y))
-            
         
-        toggle_backward_mode(nn)
-        await run(str(epoch), nn[-1][0], 'apply_grads')
-        await run(str(epoch), nn[-1][0], 'zero_grads')
-        toggle_backward_mode(nn)
+        for mini_batch in batched(xy_data, mini_batch_size):
+            for xn, y in mini_batch:
+                y_pred.append(sum(await asyncio.gather(*[
+                    run(str(epoch), input_neuron, 'forward', [x])
+                    for input_neuron, x in zip(nn[0], xn)
+                ]), [])[0].result[1][0])
+                dL = (y_pred[-1] - y)
+                toggle_backward_mode(nn)
+                await run(str(epoch), nn[-1][0], 'backward', [dL])
+                toggle_backward_mode(nn)
 
-        if epoch % 20 == 0:
-            print(f'Epoch: {epoch}, x: {xn}, y: {y}, y_pred: {y_pred[-1]:.2f}, acc_loss: {np.mean(acc_loss):.2f}')
-        if epoch % 100 == 0:
-            await plot_async(nn[0], x_data, y_data, y_pred, square_size=10, pause=0.001)
+                batch_loss.append(L2(y_pred[-1], y))
+                
+            toggle_backward_mode(nn)
+            await run(str(epoch), nn[-1][0], 'apply_grads')
+            await run(str(epoch), nn[-1][0], 'zero_grads')
+            toggle_backward_mode(nn)
+
+        train_loss.append(np.mean(batch_loss))
+        print(f'Epoch: {epoch}, loss: {train_loss[-1]:.2f}, x: ({xn[0]:.2f}, {xn[1]:.2f}), y: {y}, y_pred: {y_pred[-1]:.2f}')
+
+        if epoch % 1 == 0:
+            plot_circle(xy_data, y_pred, train_loss, pause=0.001)
     
-    # await plot_async(a, data, pause=0)
+    plot_circle(xy_data, y_pred, train_loss, pause=0)
 
 def circle(samples, r, square_size):
     x1_x2 = square_size*2*(np.random.random((samples, 2)) - 1/2)
-    # x1 = np.cos(values).tolist()
-    # x2 = np.sin(values).tolist()
-
-    y = np.array([1 if (x**2 + y**2) < r**2 else 0 for x, y in x1_x2]).tolist()
-    return x1_x2, y
+    y_real = np.array([1 if (x**2 + y**2) < r**2 else 0 for x, y in x1_x2]).tolist()
+    return [((x1, x2), y) for (x1, x2), y in zip(x1_x2, y_real)]
 
 
-nn = mlp_generator([(2, ReLU()), (3, ReLU()), (3, ReLU()), (1, ReLU())], 0.001)
-# nn[0][0].plot()
+plt.ion()
+fig, (ax_circle, ax_loss) = plt.subplots(1, 2, figsize=(12, 6))
 
+sc_tp = ax_circle.scatter([], [], alpha=0.6, label="TP", color='green')
+sc_tn = ax_circle.scatter([], [], alpha=0.6, label="TN", color='blue')
+sc_err = ax_circle.scatter([], [], alpha=0.6, label="FN | FP", color='red')
+ax_circle.set_xlim(-10, 10)
+ax_circle.set_ylim(-10, 10)
+ax_circle.set_title("Treinamento em Tempo Real")
+ax_circle.legend(loc='upper right')
 
-plt.ion() # Liga o modo interativo
-fig, ax = plt.subplots()
+line_loss, = ax_loss.plot([], [], lw=2)
+ax_loss.set_title("Loss")
+ax_loss.set_xlabel("Época")
+ax_loss.set_ylabel("Loss")
+ax_loss.grid(True)
+# ax_loss.set_xlim(0, 100)
+# ax_loss.set_ylim(0, 1)
 
-data = circle(100, 7, 10)
+nn = mlp_generator(
+    architecture=[
+        (2, ReLU()), 
+        (3, ReLU()), 
+        (2, ReLU()), 
+        (1, ReLU())
+    ],
+    lr=0.001
+)
+xy_data = circle(500, 7, 10)
 
-
-asyncio.run(train_step(nn, data))
+asyncio.run(train_step(nn, xy_data))
 

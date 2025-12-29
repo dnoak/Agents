@@ -100,7 +100,7 @@ class Neuron(Node):
         else:
             raise ValueError(f'Invalid mode `{mode}`')
 
-a = Neuron(name='a', activation=ReLU())
+a = Neuron(name='a', activation=Linear())
 b = Neuron(name='b', activation=ReLU())
 c = Neuron(name='c', activation=ReLU())
 d = Neuron(name='d', activation=ReLU())
@@ -146,17 +146,10 @@ async def run(node: Node, mode: str, inputs = None):
         status=NodeIOStatus(),
     ))
 
-async def plot_async(node_input, data, pause=0.01):
-    x_vals = np.array([d[0] for d in data])
-    y_real = np.array([d[1] for d in data])
-    y_pred = []
-    for x in x_vals:
-        res = await run(node_input, 'forward', [x])
-        y_pred.append(res[0].result[1])
-    y_pred = np.array(y_pred)
+async def plot_async(x, y, y_pred, pause=0.01):
     ax.clear()
-    ax.scatter(x_vals, y_real, color='blue', label='Real', alpha=0.5)
-    ax.scatter(x_vals, y_pred, color='red', label='Predição NN', s=5, marker='o')
+    ax.scatter(x, y, color='blue', label='Real', alpha=0.5)
+    ax.scatter(x, y_pred, color='red', label='Predição NN', s=5, marker='o')
     ax.set_title("Treinamento em Tempo Real")
     ax.set_xlabel("Input (x)")
     ax.set_ylabel("Output (y)")
@@ -170,27 +163,32 @@ def L2(output: float, real_output: float) -> float:
 async def train_step(data):
     for epoch in range(1000):
         random.shuffle(data)
-        for x, y in data:
 
-            forward_1 = await run(a, 'forward', [x])
+        x_data = [d[0] for d in data]
+        y_data = [d[1] for d in data]
+        y_pred = []
+        acc_loss = []
+        for x, y in zip(x_data, y_data):
+            y_pred.append((await run(a, 'forward', [x]))[0].result[1][0])
 
-            dL = (forward_1[0].result[1] - y)
+            dL = (y_pred[-1] - y)
             toggle_backward_mode()
             await run(e, 'backward', [dL])
             toggle_backward_mode()
+            acc_loss.append(L2(y_pred[-1], y))
 
         await run(a, 'apply_grads')
         await run(a, 'zero_grads')
 
-        print(f'Epoch: {epoch}, loss: {L2(forward_1[0].result[1], y)}')
-        if epoch % 10 == 0:
-            await plot_async(a, data)
+        if epoch % 50 == 0:
+            print(f'Epoch: {epoch}, acc_loss: {np.mean(acc_loss):.2f}')
+            await plot_async(x_data, y_data, y_pred)
     
     for x, y in data:
         y_pred = (await run(a, 'forward', [x]))[0].result[1]
         print(f'x: {x}, y: {y}, y_pred: {y_pred}')
     
-    await plot_async(a, data, pause=0)
+    await plot_async(x_data, y_data, y_pred, pause=0)
 
 def circle(samples, r):
     x1_x2 = (np.random.random((samples))-1/2)
