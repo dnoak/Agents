@@ -164,7 +164,7 @@ async def plot_async(node_input, data, pause=0.01):
     plt.draw()
     plt.pause(pause)
 
-def loss(output: float, real_output: float) -> float:
+def L2(output: float, real_output: float) -> float:
     return (output - real_output) ** 2
 
 async def train_step(data):
@@ -182,7 +182,7 @@ async def train_step(data):
         await run(a, 'apply_grads')
         await run(a, 'zero_grads')
 
-        print(f'Epoch: {epoch}, loss: {loss(forward_1[0].result[1], y)}')
+        print(f'Epoch: {epoch}, loss: {L2(forward_1[0].result[1], y)}')
         if epoch % 10 == 0:
             await plot_async(a, data)
     
@@ -196,9 +196,10 @@ def circle(samples, r):
     x1_x2 = (np.random.random((samples))-1/2)
     x1_x2[:, 0] = np.cos(x1_x2[:, 0])
     x1_x2[:, 1] = np.sin(x1_x2[:, 1])
-    print(x1_x2)
     y = np.array([[1] if x**2 + y**2 < r**2 else [0] for x, y in x1_x2])
-    return x1_x2.astype(self.dtype), y.astype(self.dtype)
+    return x1_x2, y
+
+
 
 plt.ion() # Liga o modo interativo
 fig, ax = plt.subplots()
