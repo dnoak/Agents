@@ -136,7 +136,7 @@ e.init_wandb()
 
 
 def toggle_backward_mode():
-    for node in a._workflow['s1'].nodes.values():
+    for node in a.workflow['s1'].nodes.values():
         node.toggle_backward_mode()
 
 async def run(node: Node, mode: str, inputs = None):

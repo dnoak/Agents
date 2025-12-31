@@ -11,11 +11,12 @@ from rich import print
 @dataclass
 class Alphabet(Node):
     async def execute(self, ctx) -> str:
-        print(f'Node: {self.name}')
-        execs = {f'{ctx.execution.id}{k}': v.result for k, v in ctx.execution.nodes.items()}
-        print(f'Last execs: {execs}')
-        print()
-        return self.name
+        ... # 🥵 processa algo
+        # if self.name == 'a':
+        #     ctx.routing.skip('d')
+        # print(ctx.workflow.sessions)
+        
+        return ' → '.join(ctx.inputs.results + [self.name])
 
 a = Alphabet(name='a')
 b = Alphabet(name='b')
@@ -36,7 +37,7 @@ f.connect(g)
 
 # a.plot()
 
-a._workflow.sessions_ttl = 2
+Node.workflow.sessions_ttl = 2
 
 async def main():
     res = await a.run(NodeIO(

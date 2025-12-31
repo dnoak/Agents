@@ -42,39 +42,39 @@ class Execution:
 class Session:
     id: str
     nodes: dict[str, 'Node']
+    executions: dict[str, Execution] = field(default_factory=dict)
     memory: SessionMemory = field(default_factory=SessionMemory)
-    _executions: dict[str, Execution] = field(default_factory=dict)
     _last_updated: int = field(default_factory=time.monotonic_ns)
     
-    def __getitem__(self, execution_id: str) -> Execution:
+    # def __getitem__(self, execution_id: str) -> Execution:
+    #     self._last_updated = time.monotonic_ns()
+    #     if execution_id not in self._executions:
+    #         self._executions[execution_id] = Execution(id=execution_id)
+    #     return self._executions[execution_id]
+    
+    # def __setitem__(self, execution_id: str, execution: Execution):
+    #     self._executions[execution_id] = execution
+    
+    # def __iter__(self) -> Iterator[Execution]:
+    #     return iter(self._executions.values())
+
+    def __getattr__(self, attr: str):
+        if attr == '_last_updated':
+            return self._last_updated
         self._last_updated = time.monotonic_ns()
-        if execution_id not in self._executions:
-            self._executions[execution_id] = Execution(id=execution_id)
-        return self._executions[execution_id]
-    
-    def __setitem__(self, execution_id: str, execution: Execution):
-        self._executions[execution_id] = execution
-    
-    def __iter__(self) -> Iterator[Execution]:
-        return iter(self._executions.values())
+        return getattr(self.nodes, attr)
 
 @dataclass
 class Workflow:
     def __post_init__(self):
         self.is_active: bool = False
+        self.sessions: dict[str, Session] = {}
         self.sessions_ttl: float | None = 300 
-        self._sessions: dict[str, Session] = {}
         self._graphviz_attributes: GraphvizAttributes = GraphvizAttributes()
         self._constructor_nodes: list['Node'] = []
         self._node_factory = type('Node', (nodesio_engine.Node,), {'execute': None})
 
-    def __contains__(self, session_id: str):
-        return session_id in self._sessions
-
-    def __getitem__(self, session_id: str) -> Session:
-        return self._sessions[session_id]
-    
-    def create_session(self, session_id: str) -> Session:
+    def _create_session(self, session_id: str) -> Session:
         session_nodes: dict[str, 'Node'] = {}
         for node in self._constructor_nodes:
             self._node_factory.__name__ = node.__class__.__name__
@@ -82,7 +82,6 @@ class Workflow:
                 name=node.name, 
                 _constructor_node=False
             )
-
         for cnode in self._constructor_nodes:
             snode = session_nodes[cnode.name]
             for attr_name in cnode._custom_attr_names:
@@ -99,20 +98,29 @@ class Workflow:
                 snode._input_nodes.append(session_nodes[constructor_input.name])
             for constructor_output in cnode._output_nodes:
                 snode._output_nodes.append(session_nodes[constructor_output.name])
-        self._sessions[session_id] = Session(id=session_id, nodes=session_nodes)
-        return self._sessions[session_id]
+        self.sessions[session_id] = Session(id=session_id, nodes=session_nodes)
+        return self.sessions[session_id]
     
-    def create_graph(self):
+    def _get_session(self, session_id: str, execution_id: str) -> Session:
+        session = self.sessions.get(session_id)
+        if session is None:
+            session = self._create_session(session_id)
+        if execution_id not in session.executions:
+            session.executions[execution_id] = Execution(id=execution_id)
+        return session
+    
+    def create_graph(self, show_methods: bool):
         graph: graphviz.Digraph = graphviz.Digraph(
             graph_attr=self._graphviz_attributes.graph()
         )
         for node in self._constructor_nodes:
+            methods = (node._custom_methods_names - {'execute'}) if show_methods else set()
             graph.node(
                 name=node.name,
                 **self._graphviz_attributes.node(
                     name=node.name,
                     output_schema=node._output_schema.__name__,
-                    tools=node._custom_methods_names - {'execute'},
+                    methods=methods,
                 )
             )
             for output_node in node._output_nodes:
@@ -123,8 +131,8 @@ class Workflow:
                 )
         return graph
 
-    def plot(self, mode: Literal['html', 'image'] = 'image', wait: float = 0.2):
-        graph = self.create_graph()
+    def plot(self, mode: Literal['html', 'image'] = 'image', show_methods: bool = True, wait: float = 0.2):
+        graph = self.create_graph(show_methods=show_methods)
         if mode == 'image':
             Image.open(BytesIO(graph.pipe(format='png'))).show(title='Workflow')
             time.sleep(wait)
@@ -150,9 +158,9 @@ class Workflow:
             await asyncio.sleep(self.sessions_ttl)
             now = time.monotonic_ns()
             delete = []
-            for session in self._sessions.values():
+            for session in self.sessions.values():
                 if session._last_updated + self.sessions_ttl < now:
                     delete.append(session.id)
             for session_id in delete:
-                del self._sessions[session_id]
+                del self.sessions[session_id]
     

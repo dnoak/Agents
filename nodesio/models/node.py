@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import nodesio.engine.node as nodesio_engine
 if TYPE_CHECKING:
     from nodesio.engine.node import Node
-    from nodesio.engine.workflow import Execution, Session
+    from nodesio.engine.workflow import Workflow, Execution, Session
 
 NodeExternalInput = '__input__'
 
@@ -122,8 +122,7 @@ class NodeExecutorContext:
     inputs: NodeExecutorInputs
     session: 'Session'
     execution: 'Execution'
-    # execution_id: str
-    # session_id: str
+    workflow: 'Workflow'
     routing: NodeExecutorRouting
 
 class GraphvizAttributes:
@@ -154,7 +153,7 @@ class GraphvizAttributes:
             'fontname': 'Helvetica',
         }
 
-    def node(self, name: str, output_schema: str, tools: set[str]) -> dict:
+    def node(self, name: str, output_schema: str, methods: set[str]) -> dict:
         table = '\n'.join([
             f"""
             <TR>
@@ -163,7 +162,7 @@ class GraphvizAttributes:
                 </TD>
             </TR>
             """.strip()
-            for i, tool in enumerate(tools)
+            for i, tool in enumerate(methods)
         ])
         return {
             'shape': 'record',

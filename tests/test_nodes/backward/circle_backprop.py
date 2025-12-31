@@ -1,50 +1,24 @@
 from abc import ABC, abstractmethod
 import random
-import time
-from typing import Any, Callable
-import uuid
+from typing import Any
 from nodesio.engine.node import Node
-from nodesio.models.node import (
-    NodeExternalInput,
-    NodeExecutorConfig,
-    NodeIO, 
-    NodeIOStatus, 
-    NodeIOSource,
-)
 from dataclasses import dataclass, field
 import asyncio
 import numpy as np
 from rich import print
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from itertools import batched
-
-@dataclass
-class ActivationFunction:
-    @abstractmethod
-    def forward(self, z) -> Any: ...
-    @abstractmethod
-    def backward(self, z) -> Any: ...
-
-@dataclass
-class Linear(ActivationFunction):
-    def forward(self, z):
-        return z
-    
-    def backward(self, z):
-        return 1
-
-@dataclass
-class ReLU(ActivationFunction):
-    def forward(self, z):
-        return np.maximum(z, 0)
-    
-    def backward(self, z):
-        return 1 if z > 0 else 0
+from matplotlib.colors import LinearSegmentedColormap
+from scipy.interpolate import griddata
+from nodesio.models.node import (
+    NodeIO, 
+    NodeIOStatus, 
+    NodeIOSource,
+)
 
 @dataclass
 class NeuronInput(Node):
-    def toggle_backward_mode(self):
+    def toggle_train_mode(self):
         self._input_nodes, self._output_nodes = self._output_nodes, self._input_nodes
 
     async def execute(self, ctx) -> list:
@@ -55,7 +29,7 @@ class Neuron(Node):
     w: np.ndarray
     b: float
     lr: float
-    activation: ActivationFunction
+    activation: 'ActivationFunction'
     w_grad: np.ndarray = field(init=False)
     b_grad: float = field(init=False)
     x: np.ndarray = field(init=False)
@@ -70,7 +44,7 @@ class Neuron(Node):
         self.z = np.zeros(1)
         self.a = np.zeros(1)
 
-    def toggle_backward_mode(self):
+    def toggle_train_mode(self):
         self._input_nodes, self._output_nodes = self._output_nodes, self._input_nodes
 
     def apply_grads(self):
@@ -96,6 +70,7 @@ class Neuron(Node):
         return self.a
 
     async def execute(self, ctx) -> tuple[str, Any]:
+        ctx.workflow
         mode = ctx.inputs.results[0][0]
         if mode == 'apply_grads':
             self.apply_grads()
@@ -109,7 +84,55 @@ class Neuron(Node):
             return ('backward', self.backward([r[1] for r in ctx.inputs.results]))
         else:
             raise ValueError(f'Invalid mode `{mode}`')
-        
+    
+
+@dataclass
+class LossFunction(ABC):
+    @abstractmethod
+    def forward(self, y, y_pred) -> Any: ...
+    @abstractmethod
+    def backward(self, y, y_pred) -> Any: ...
+
+@dataclass
+class L2(LossFunction):
+    def forward(self, y, y_pred):
+        return (y_pred - y) ** 2
+    
+    def backward(self, y, y_pred):
+        return 2 * (y_pred - y)
+
+@dataclass
+class ActivationFunction(ABC):
+    @abstractmethod
+    def forward(self, z) -> Any: ...
+    @abstractmethod
+    def backward(self, z) -> Any: ...
+
+@dataclass
+class Linear(ActivationFunction):
+    def forward(self, z):
+        return z
+    
+    def backward(self, z):
+        return 1
+
+@dataclass
+class ReLU(ActivationFunction):
+    def forward(self, z):
+        return np.maximum(z, 0)
+    
+    def backward(self, z):
+        return 1 if z > 0 else 0
+
+@dataclass
+class Sigmoid(ActivationFunction):
+    def forward(self, z):
+        return 1 / (1 + np.exp(-z))
+    
+    def backward(self, z):
+        return self.forward(z) * (1 - self.forward(z))
+
+
 def mlp_generator(architecture: list[tuple[int, ActivationFunction]], lr: float) -> list[list[Neuron] | list[NeuronInput]]:
     inputs = [
         NeuronInput(name=f"input_{i}")
@@ -140,40 +163,41 @@ def mlp_generator(architecture: list[tuple[int, ActivationFunction]], lr: float)
                 current_neuron.connect(next_neuron)
     return layers
 
-def toggle_backward_mode(nn: list[list[Neuron] | list[NeuronInput]]):
-    for node in nn[0][0]._workflow['s1'].nodes.values():
-        node.toggle_backward_mode()
+def circle_data_generator(samples, r):
+    square_side = 1/2 * r * (2 * np.pi) ** (1/2)
+    x1_x2 = square_side * 2 * (np.random.random((samples, 2)) - 1/2)
+    y_real = np.array([1 if (x**2 + y**2) < r**2 else 0 for x, y in x1_x2]).tolist()
+    return [((x1, x2), y) for (x1, x2), y in zip(x1_x2, y_real)]
 
-def plot_circle(xy_data, y_pred, acc_loss, pause):
-    X = np.array([xy for (xy, _) in xy_data])
-    y_true = np.array([y for (_, y) in xy_data])
-    y_pred = np.array(y_pred)
+def plot_train_graph(xy_data, y_pred, scatter_xy_data, loss, pause):
+    xy = np.asarray([xyd[0] for xyd in xy_data])
+    y_pred = np.asarray(y_pred)
+    xs = np.linspace(-AX_LIM, AX_LIM, GRID_RES)
+    ys = np.linspace(-AX_LIM, AX_LIM, GRID_RES)
+    xx, yy = np.meshgrid(xs, ys)
+    zi = griddata(
+        xy,
+        y_pred,
+        (xx, yy),
+        method="linear",
+        fill_value=0.0
+    )
+    heatmap.set_data(zi)
 
-    y_hat = (y_pred >= 0.5).astype(int)
+    scatter_class_1.set_offsets([xyd[0] for xyd in scatter_xy_data if xyd[1] >= 0.5])
+    scatter_class_0.set_offsets([xyd[0] for xyd in scatter_xy_data if xyd[1] < 0.5])
 
-    TP = X[(y_true == 1) & (y_hat == 1)]
-    TN = X[(y_true == 0) & (y_hat == 0)]
-    ERR = X[y_true != y_hat]
-
-    sc_tp.set_offsets(TP)
-    sc_tn.set_offsets(TN)
-    sc_err.set_offsets(ERR)
-
-    # loss_x.append(list(range(len(acc_loss))))
-    # loss_y.append(loss)
-
-    line_loss.set_data(list(range(len(acc_loss))), acc_loss)
-
+    line_loss.set_data(list(range(len(loss))), loss)
     ax_loss.relim()
     ax_loss.autoscale_view()
-
     fig.canvas.draw_idle()
     fig.canvas.flush_events()
+    plt.tight_layout()
     plt.pause(pause)
 
-
-def L2(output: float, real_output: float) -> float:
-    return (output - real_output) ** 2
+def toggle_train_mode(nn: list[list[Neuron] | list[NeuronInput]]):
+    for node in nn[0][0].workflow.sessions['s1'].nodes.values():
+        node.toggle_train_mode()
 
 async def run(exec_id: str, node: Node, mode: str, inputs = None):
     return await node.run(NodeIO(
@@ -182,76 +206,93 @@ async def run(exec_id: str, node: Node, mode: str, inputs = None):
         status=NodeIOStatus(),
     ))
 
-async def train_step(nn: list[list[Neuron] | list[NeuronInput]], xy_data):
-    mini_batch_size = int(len(xy_data) * 0.1)
+async def train_nn(nn: list[list[Neuron] | list[NeuronInput]], xy_data):
+    mini_batch_size = int(len(xy_data) * 0.2)
     train_loss = []
+    loss_function = L2()
+
     for epoch in range(100):
         random.shuffle(xy_data)
         
         batch_loss = []
         y_pred = []
         
-        for mini_batch in batched(xy_data, mini_batch_size):
-            for xn, y in mini_batch:
-                y_pred.append(sum(await asyncio.gather(*[
+        for mini_batch_xy_data in batched(xy_data, mini_batch_size):
+
+            mini_batch_y_pred = []
+            for xn, y in mini_batch_xy_data:
+
+                forward = sum(await asyncio.gather(*[
                     run(str(epoch), input_neuron, 'forward', [x])
                     for input_neuron, x in zip(nn[0], xn)
-                ]), [])[0].result[1][0])
-                dL = (y_pred[-1] - y)
-                toggle_backward_mode(nn)
-                await run(str(epoch), nn[-1][0], 'backward', [dL])
-                toggle_backward_mode(nn)
+                ]), [])[0].result[1][0]
+                batch_loss.append(loss_function.forward(y, forward))
 
-                batch_loss.append(L2(y_pred[-1], y))
+                y_pred.append(forward)
+                mini_batch_y_pred.append(forward)
+
+                # dL = (forward - y)
+
+                toggle_train_mode(nn)
+                await run(str(epoch), nn[-1][0], 'backward', [loss_function.backward(y, forward)])
+                toggle_train_mode(nn)
+
+            # plot_train_graph(mini_batch_xy_data, mini_batch_y_pred, xy_data, train_loss, 0.001)
                 
-            toggle_backward_mode(nn)
+            toggle_train_mode(nn)
             await run(str(epoch), nn[-1][0], 'apply_grads')
             await run(str(epoch), nn[-1][0], 'zero_grads')
-            toggle_backward_mode(nn)
+            toggle_train_mode(nn)
 
         train_loss.append(np.mean(batch_loss))
         print(f'Epoch: {epoch}, loss: {train_loss[-1]:.2f}, x: ({xn[0]:.2f}, {xn[1]:.2f}), y: {y}, y_pred: {y_pred[-1]:.2f}')
 
-        if epoch % 1 == 0:
-            plot_circle(xy_data, y_pred, train_loss, pause=0.001)
+        plot_train_graph(xy_data, y_pred, xy_data, train_loss, 0.001)
     
-    plot_circle(xy_data, y_pred, train_loss, pause=0)
+    plot_train_graph(xy_data, y_pred, xy_data, train_loss, 0)
 
-def circle(samples, r, square_size):
-    x1_x2 = square_size*2*(np.random.random((samples, 2)) - 1/2)
-    y_real = np.array([1 if (x**2 + y**2) < r**2 else 0 for x, y in x1_x2]).tolist()
-    return [((x1, x2), y) for (x1, x2), y in zip(x1_x2, y_real)]
 
+CIRCUMFERENCE_RADIUS = 1
+AX_LIM = CIRCUMFERENCE_RADIUS * 1/2 * (2 * np.pi) ** (1/2)
+GRID_RES = 100
 
 plt.ion()
-fig, (ax_circle, ax_loss) = plt.subplots(1, 2, figsize=(12, 6))
-
-sc_tp = ax_circle.scatter([], [], alpha=0.6, label="TP", color='green')
-sc_tn = ax_circle.scatter([], [], alpha=0.6, label="TN", color='blue')
-sc_err = ax_circle.scatter([], [], alpha=0.6, label="FN | FP", color='red')
-ax_circle.set_xlim(-10, 10)
-ax_circle.set_ylim(-10, 10)
-ax_circle.set_title("Treinamento em Tempo Real")
-ax_circle.legend(loc='upper right')
-
+fig, (ax_heatmap, ax_loss) = plt.subplots(1, 2, figsize=(12, 6))
+ax_heatmap.set_xlim(-AX_LIM, AX_LIM)
+ax_heatmap.set_ylim(-AX_LIM, AX_LIM)
+ax_heatmap.set_title("Heatmap (x1, x2) → y")
+scatter_class_1 = ax_heatmap.scatter([], [], alpha=1, label="1", color='blue', marker='o', edgecolors='white', s=30)
+scatter_class_0 = ax_heatmap.scatter([], [], alpha=1, label="0", color='red', marker='o', edgecolors='white', s=30)
+heatmap = ax_heatmap.imshow(
+    np.zeros((GRID_RES, GRID_RES)),
+    extent=(-AX_LIM, AX_LIM, -AX_LIM, AX_LIM),
+    origin="lower",
+    cmap=LinearSegmentedColormap.from_list(
+        "RB",
+        ["lightcoral", "dodgerblue"]
+    ),
+    vmin=0.0, vmax=1.0, aspect="auto"
+)
 line_loss, = ax_loss.plot([], [], lw=2)
 ax_loss.set_title("Loss")
-ax_loss.set_xlabel("Época")
+ax_loss.set_xlabel("Epoch")
 ax_loss.set_ylabel("Loss")
 ax_loss.grid(True)
-# ax_loss.set_xlim(0, 100)
-# ax_loss.set_ylim(0, 1)
+plt.colorbar(heatmap, ax=ax_heatmap, label="y")
+
 
 nn = mlp_generator(
     architecture=[
         (2, ReLU()), 
-        (3, ReLU()), 
-        (2, ReLU()), 
+        (5, ReLU()), 
+        (5, ReLU()),
         (1, ReLU())
     ],
     lr=0.001
 )
-xy_data = circle(500, 7, 10)
+nn[0][0].plot(show_methods=False)
 
-asyncio.run(train_step(nn, xy_data))
+xy_data = circle_data_generator(samples=1000, r=CIRCUMFERENCE_RADIUS)
+
+asyncio.run(train_nn(nn, xy_data))
 

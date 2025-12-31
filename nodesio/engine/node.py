@@ -56,14 +56,15 @@ class Node(NodeInterface):
         )
     
     def _set_workflow(self):
-        if not hasattr(Node, '_workflow'):
-            Node._workflow = Workflow()
-        if self.name in Node._workflow._constructor_nodes:
+        if not hasattr(Node, 'workflow'):
+            Node.workflow = Workflow()
+        
+        if self.name in [cn.name for cn in Node.workflow._constructor_nodes]:
             raise ValueError(f'Node name `{self.name}` already exist in Workflow')
-        Node._workflow._constructor_nodes.append(self)
+        Node.workflow._constructor_nodes.append(self)
     
-    def plot(self, mode: Literal['html', 'image'] = 'image', wait: float = 0.2):
-        Node._workflow.plot(mode=mode, wait=wait)
+    def plot(self, mode: Literal['html', 'image'] = 'image', show_methods: bool = True, wait: float = 0.2):
+        Node.workflow.plot(mode=mode, show_methods=show_methods, wait=wait)
 
     def connect(self, node: 'Node'):
         self._output_nodes.append(node)
@@ -71,13 +72,14 @@ class Node(NodeInterface):
         return node
     
     async def _start(self, source: NodeIOSource, inputs: list[NodeIO]) -> list[NodeIO]:
-        session = Node._workflow[source.session_id]
-        execution = session[source.execution_id]
+        session = Node.workflow.sessions[source.session_id]
+        execution = session.executions[source.execution_id]
 
         ctx = NodeExecutorContext(
             inputs=NodeExecutorInputs(inputs),
             session=session,
             execution=execution,
+            workflow=Node.workflow,
             routing=NodeExecutorRouting(
                 choices={n.name: NodeIOStatus() for n in self._output_nodes}
             )
@@ -111,17 +113,16 @@ class Node(NodeInterface):
         return [output]
 
     async def _run_in_session(self, input: NodeIO) -> list[NodeIO]:
-        sid = input.source.session_id
-        eid = input.source.execution_id
-        if sid not in self._workflow:
-            session = self._workflow.create_session(session_id=sid)
-            session[eid] = Execution(id=eid)
-        return await self._workflow[sid].nodes[self.name].run(input)
+        session = self.workflow._get_session(
+            input.source.session_id, 
+            input.source.execution_id
+        )
+        return await session.nodes[self.name].run(input)
     
     async def run(self, input: NodeIO) -> list[NodeIO]:
-        if not Node._workflow.is_active:
-            asyncio.create_task(Node._workflow.start_ttl_trigger())
-            Node._workflow.is_active = True
+        if not Node.workflow.is_active:
+            asyncio.create_task(Node.workflow.start_ttl_trigger())
+            Node.workflow.is_active = True
 
         self._inputs_queue.put(NodeIO(
             source=input.source,
