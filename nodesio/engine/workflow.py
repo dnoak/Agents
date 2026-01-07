@@ -23,7 +23,7 @@ class SessionMemory:
     messages: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=10))
     facts: list[Any] = field(default_factory=list)
     shared: dict[str, Any] = field(default_factory=dict)
-
+    
 @dataclass
 class Execution:
     id: str 

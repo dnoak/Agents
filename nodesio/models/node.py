@@ -23,13 +23,7 @@ _NotProcessed = NotProcessed()
 
 @dataclass
 class NodeExecutorConfig:
-    """
-    routing_default_policy:
-        0: clear all the routes before inserting new routes
-        1: broadcast to all nodes
-        2: skip all nodes
-    """
-    routing_default_policy: Literal['broadcast', 'clear'] = 'broadcast'
+    routing_default_policy: Literal['broadcast', 'skip'] = 'broadcast'
     # execution_ttl: float = 300
     ...
 
@@ -87,12 +81,12 @@ class AllNodes:
 @dataclass
 class NodeExecutorRouting:
     choices: dict[str, NodeIOStatus]
-    default_policy: Literal['broadcast', 'clear']
+    default_policy: Literal['broadcast', 'skip']
 
     def __post_init__(self):
         if self.default_policy == 'broadcast':
             self.broadcast()
-        elif self.default_policy == 'clear':
+        elif self.default_policy == 'skip':
             self.clear()
         else:
             raise ValueError(f'Invalid routing default policy `{self.default_policy}`')
