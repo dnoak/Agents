@@ -20,7 +20,7 @@ class MemoryNode(Node):
         pass
     def tool3(self):
         pass
-    async def execute(self):
+    async def execute(self, ctx):
         self.tool1()
         self.tool2()
         self.tool3()

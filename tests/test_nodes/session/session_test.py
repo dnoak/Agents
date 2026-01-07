@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import dataclass, field
 import time
 from nodesio.engine.node import Node
-from nodesio.models.node import NodeIO, NodeIOStatus, NodeIOSource, NodeExecutorConfig, AllNodesRoutes, NotProcessed
+from nodesio.models.node import NodeIO, NodeIOStatus, NodeIOSource, NodeExecutorConfig, NotProcessed
 from rich import print
 
 @dataclass
@@ -13,7 +13,7 @@ class Alphabet(Node):
     async def execute(self, ctx) -> int:
         self.count += 1
         ctx.workflow.sessions[ctx.session.id]
-        return sum(ctx.inputs.results)
+        return sum(ctx.inputs.outputs)
 
 a = Alphabet(name='a')
 b = Alphabet(name='b')
@@ -46,8 +46,8 @@ async def main():
         for i in range(int(hundred_exec / 10)):
             res = await a.run(NodeIO(
                 source=NodeIOSource(session_id=f'session_{hundred_exec}', execution_id=f'{hundred_exec}_{i}', node=None),
-                result=hundred_exec + i,
                 status=NodeIOStatus(),
+                output=hundred_exec + i,
             ))
             # print(a._running_executions)
             print(res)

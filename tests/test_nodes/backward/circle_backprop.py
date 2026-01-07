@@ -11,6 +11,7 @@ from itertools import batched
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.interpolate import griddata
 from nodesio.models.node import (
+    NodeExecutorConfig,
     NodeIO, 
     NodeIOStatus, 
     NodeIOSource,
@@ -22,7 +23,7 @@ class NeuronInput(Node):
         self._input_nodes, self._output_nodes = self._output_nodes, self._input_nodes
 
     async def execute(self, ctx) -> list:
-        return ctx.inputs.results[0]
+        return ctx.inputs.outputs[0]
 
 @dataclass
 class Neuron(Node):
@@ -35,7 +36,7 @@ class Neuron(Node):
     x: np.ndarray = field(init=False)
     z: np.ndarray = field(init=False)
     a: np.ndarray = field(init=False)
-
+    
     def __post_init__(self):
         super().__post_init__()
         self.w_grad = np.zeros_like(self.w)
@@ -71,7 +72,7 @@ class Neuron(Node):
 
     async def execute(self, ctx) -> tuple[str, Any]:
         ctx.workflow
-        mode = ctx.inputs.results[0][0]
+        mode = ctx.inputs.outputs[0][0]
         if mode == 'apply_grads':
             self.apply_grads()
             return ('apply_grads', None)
@@ -79,9 +80,9 @@ class Neuron(Node):
             self.zero_grads()
             return ('zero_grads', None)
         elif mode == 'forward':
-            return ('forward', self.forward([r[1] for r in ctx.inputs.results]))
+            return ('forward', self.forward([r[1] for r in ctx.inputs.outputs]))
         elif mode == 'backward':
-            return ('backward', self.backward([r[1] for r in ctx.inputs.results]))
+            return ('backward', self.backward([r[1] for r in ctx.inputs.outputs]))
         else:
             raise ValueError(f'Invalid mode `{mode}`')
     
@@ -202,8 +203,8 @@ def toggle_train_mode(nn: list[list[Neuron] | list[NeuronInput]]):
 async def run(exec_id: str, node: Node, mode: str, inputs = None):
     return await node.run(NodeIO(
         source=NodeIOSource(session_id=f's1', execution_id=exec_id, node=None),
-        result=(mode, inputs),
         status=NodeIOStatus(),
+        output=(mode, inputs),
     ))
 
 async def train_nn(nn: list[list[Neuron] | list[NeuronInput]], xy_data):
@@ -225,7 +226,7 @@ async def train_nn(nn: list[list[Neuron] | list[NeuronInput]], xy_data):
                 forward = sum(await asyncio.gather(*[
                     run(str(epoch), input_neuron, 'forward', [x])
                     for input_neuron, x in zip(nn[0], xn)
-                ]), [])[0].result[1][0]
+                ]), [])[0].output[1][0]
                 batch_loss.append(loss_function.forward(y, forward))
 
                 y_pred.append(forward)
@@ -290,7 +291,7 @@ nn = mlp_generator(
     ],
     lr=0.001
 )
-nn[0][0].plot(show_methods=False)
+# nn[0][0].plot(show_methods=False)
 
 xy_data = circle_data_generator(samples=1000, r=CIRCUMFERENCE_RADIUS)
 

@@ -1,17 +1,13 @@
-import copy
 from dataclasses import dataclass, field
-import time
-from types import MethodType
-from typing import Any, Callable, Literal, get_type_hints
+from typing import Any, Literal, get_type_hints
 from abc import ABC, abstractmethod
 import dataclasses
 import asyncio
 import inspect
 from nodesio.engine.inputs_queue import NodeInputsQueue
-from nodesio.engine.workflow import Workflow, Execution
+from nodesio.engine.workflow import Workflow
 from nodesio.models.node import (
     _NotProcessed,
-    GraphvizAttributes,
     NodeExecutorContext,
     NodeIO,
     NodeIOStatus,
@@ -81,36 +77,37 @@ class Node(NodeInterface):
             execution=execution,
             workflow=Node.workflow,
             routing=NodeExecutorRouting(
-                choices={n.name: NodeIOStatus() for n in self._output_nodes}
+                choices={n.name: NodeIOStatus() for n in self._output_nodes},
+                default_policy=self.config.routing_default_policy
             )
         )
         if any(r.status.execution == 'success' for r in inputs):
-            result = await self.execute(ctx)
+            output = await self.execute(ctx)
             execution_status = 'success'
         else:
-            ctx.routing.skip()
+            ctx.routing.clear()
+            output = _NotProcessed
             execution_status = 'skipped'
-            result = _NotProcessed
 
-        output = NodeIO(
+        result = NodeIO(
             source=source,
-            result=result,
             status=NodeIOStatus(execution=execution_status, message=''),
+            output=output,
         )
-        execution[self.name] = output
+        execution[self.name] = result
 
         forward_nodes = [
             node.run(
                 input=NodeIO(
                     source=source,
-                    result=result,
                     status=ctx.routing.choices[node.name],
+                    output=output,
                 )
             ) for node in self._output_nodes
         ]
         if forward_nodes:
             return sum(await asyncio.gather(*forward_nodes), [])
-        return [output]
+        return [result]
 
     async def _run_in_session(self, input: NodeIO) -> list[NodeIO]:
         session = self.workflow._get_session(
@@ -126,8 +123,8 @@ class Node(NodeInterface):
 
         self._inputs_queue.put(NodeIO(
             source=input.source,
-            result=input.result,
             status=input.status,
+            output=input.output,
         ))
         
         sid = input.source.session_id
@@ -138,7 +135,7 @@ class Node(NodeInterface):
         
         self._running = True
         inputs = await self._inputs_queue.get(eid)
-        output = await self._start(
+        result = await self._start(
             source=NodeIOSource(
                 session_id=sid, 
                 execution_id=eid, 
@@ -148,7 +145,7 @@ class Node(NodeInterface):
         )
         self._running = False
         
-        return output
+        return result
 
 @dataclass
 class EmptyNode(Node):

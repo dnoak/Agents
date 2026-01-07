@@ -20,9 +20,9 @@ if TYPE_CHECKING:
 
 @dataclass
 class SessionMemory:
-    executor_attributes: dict[str, list[tuple[str, Any]]] = field(default_factory=dict)
-    messages: deque[dict[str, Any]] = field(default_factory=deque)
-    facts: list[str] = field(default_factory=list)
+    messages: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=10))
+    facts: list[Any] = field(default_factory=list)
+    shared: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class Execution:
@@ -45,18 +45,6 @@ class Session:
     executions: dict[str, Execution] = field(default_factory=dict)
     memory: SessionMemory = field(default_factory=SessionMemory)
     _last_updated: int = field(default_factory=time.monotonic_ns)
-    
-    # def __getitem__(self, execution_id: str) -> Execution:
-    #     self._last_updated = time.monotonic_ns()
-    #     if execution_id not in self._executions:
-    #         self._executions[execution_id] = Execution(id=execution_id)
-    #     return self._executions[execution_id]
-    
-    # def __setitem__(self, execution_id: str, execution: Execution):
-    #     self._executions[execution_id] = execution
-    
-    # def __iter__(self) -> Iterator[Execution]:
-    #     return iter(self._executions.values())
 
     def __getattr__(self, attr: str):
         if attr == '_last_updated':

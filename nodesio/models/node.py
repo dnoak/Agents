@@ -23,6 +23,13 @@ _NotProcessed = NotProcessed()
 
 @dataclass
 class NodeExecutorConfig:
+    """
+    routing_default_policy:
+        0: clear all the routes before inserting new routes
+        1: broadcast to all nodes
+        2: skip all nodes
+    """
+    routing_default_policy: Literal['broadcast', 'clear'] = 'broadcast'
     # execution_ttl: float = 300
     ...
 
@@ -40,8 +47,8 @@ class NodeIOSource:
 @dataclass
 class NodeIO:
     source: NodeIOSource
-    result: Any
     status: NodeIOStatus
+    output: Any
 
 @dataclass
 class NodeExecutorInputs:
@@ -68,55 +75,68 @@ class NodeExecutorInputs:
         return iter(self._dict_inputs.values())
     
     @property
-    def results(self) -> list[Any]:
+    def outputs(self) -> list[Any]:
         return [
-            i.result for i in self._dict_inputs.values()
+            i.output for i in self._dict_inputs.values()
             if i.status.execution == 'success'
         ]
 
-class AllNodesRoutes:
+class AllNodes:
     pass
 
 @dataclass
 class NodeExecutorRouting:
     choices: dict[str, NodeIOStatus]
+    default_policy: Literal['broadcast', 'clear']
+
+    def __post_init__(self):
+        if self.default_policy == 'broadcast':
+            self.broadcast()
+        elif self.default_policy == 'clear':
+            self.clear()
+        else:
+            raise ValueError(f'Invalid routing default policy `{self.default_policy}`')
 
     @overload
-    def route(self, nodes: str): ...
+    def add(self, nodes: str): ... 
     @overload
-    def route(self, nodes: list[str]): ...
-    @overload
-    def route(self, nodes: AllNodesRoutes = AllNodesRoutes()): ...             
+    def add(self, nodes: list[str]): ...           
     @overload
     def skip(self, nodes: str): ...
     @overload
     def skip(self, nodes: list[str]): ...
-    @overload
-    def skip(self, nodes: AllNodesRoutes = AllNodesRoutes()): ...
 
-    def _nodes_routing_list(self, nodes: str | list[str] | AllNodesRoutes) -> list[str]:
+    def _nodes_routing_list(self, nodes: str | list[str]) -> list[str]:
         if isinstance(nodes, str):
             return [nodes]
         elif isinstance(nodes, list):
             return nodes
-        elif isinstance(nodes, AllNodesRoutes):
+        elif isinstance(nodes, AllNodes):
             return list(self.choices.keys())
         raise ValueError(f'Invalid nodes routing type `{type(nodes)}`')
     
-    def route(self, nodes: str | list[str] | AllNodesRoutes = AllNodesRoutes()):
+    def add(self, nodes: str | list[str]):
         forward_nodes = self._nodes_routing_list(nodes)
         for node in forward_nodes:
             if node not in self.choices:
                 raise ValueError(f'Node `{node}` is not a valid routing in {list(self.choices.keys())}.')
             self.choices[node].execution = 'success'
+
+    def broadcast(self):
+        for node in self.choices:
+            self.choices[node].execution = 'success'
     
-    def skip(self, nodes: str | list[str] | AllNodesRoutes = AllNodesRoutes()):
+    def skip(self, nodes: str | list[str]):
         skip_nodes = self._nodes_routing_list(nodes)
         for node in skip_nodes:
             if node not in self.choices:
                 raise ValueError(f'Node `{node}` is not a valid routing in {list(self.choices.keys())}.')
             self.choices[node].execution = 'skipped'
 
+    def clear(self):
+        for node in self.choices:
+            self.choices[node].execution = 'skipped'
+    
 @dataclass
 class NodeExecutorContext:
     inputs: NodeExecutorInputs
