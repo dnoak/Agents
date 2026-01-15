@@ -1,8 +1,8 @@
 import random
 import time
 from typing import ClassVar
-from nodesio.models.node import NodeIO, NodeIOStatus, NodeExecutorConfig, NodeExternalInput, NodeIOSource
-from nodesio.engine.node import Node
+from nodesIO.models.node import NodeIO, NodeIOStatus, NodeExecutorConfig, NodeExternalInput, NodeIOSource
+from nodesIO.engine.node import Node
 from dataclasses import dataclass, field
 import asyncio
 import numpy as np
@@ -14,7 +14,7 @@ class NeuronInput(Node):
     config = NodeExecutorConfig()
 
     async def execute(self, ctx) -> float:
-        return ctx.inputs[NodeExternalInput].result
+        return ctx.inputs[NodeExternalInput].output
 
 @dataclass
 class Neuron(Node):
@@ -23,7 +23,7 @@ class Neuron(Node):
     # config = NodeExecutorConfig(execution_ttl=3)
     
     async def execute(self, ctx) -> float:
-        x = np.array(ctx.inputs.results)
+        x = np.array(ctx.inputs.outputs)
         z = x @ self.w + self.b
         a = max(z, 0.)
         return float(a)
@@ -84,8 +84,8 @@ def batch_runs(mlp, label: str, runs: int):
                     execution_id=f'{label}_{run}',
                     node=None
                 ),
-                result=random.uniform(-1, 1),
                 status=NodeIOStatus(),
+                output=random.uniform(-1, 1),
             )))
     
     random.seed(int(label))
@@ -113,7 +113,7 @@ async def main():
         
         t0 = time.perf_counter()
         batches_results.append([
-            r.result for r in sum(await asyncio.gather(*batches_runs), [])
+            r.output for r in sum(await asyncio.gather(*batches_runs), [])
         ])
         t1 = time.perf_counter()
         batches_times.append(t1 - t0)

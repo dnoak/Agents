@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import random
 from typing import Any
-from nodesio.engine.node import Node
+from nodesIO.engine.node import Node
 from dataclasses import dataclass, field
 import asyncio
 import numpy as np
@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from itertools import batched
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.interpolate import griddata
-from nodesio.models.node import (
+from nodesIO.models.node import (
     NodeExecutorConfig,
     NodeIO, 
     NodeIOStatus, 
@@ -51,7 +51,7 @@ class Neuron(Node):
     def apply_grads(self):
         self.w -= self.w_grad * self.lr
         self.b -= self.b_grad * self.lr
-
+    
     def zero_grads(self):
         self.w_grad = np.zeros_like(self.w)
         self.b_grad = 0

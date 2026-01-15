@@ -1,12 +1,12 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass
 from typing import Any, Literal, get_type_hints
 from abc import ABC, abstractmethod
 import dataclasses
 import asyncio
 import inspect
-from nodesio.engine.inputs_queue import NodeInputsQueue
-from nodesio.engine.workflow import Workflow
-from nodesio.models.node import (
+from nodesIO.engine.inputs_queue import NodeInputsQueue
+from nodesIO.engine.workflow import Workflow
+from nodesIO.models.node import (
     _NotProcessed,
     NodeExecutorContext,
     NodeIO,
@@ -144,9 +144,4 @@ class Node(NodeInterface):
             inputs=inputs,
         )
         self._running = False
-        
         return result
-
-@dataclass
-class EmptyNode(Node):
-    async def execute(self, ctx) -> Any: ...

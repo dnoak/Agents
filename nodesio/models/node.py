@@ -9,10 +9,10 @@ from typing import Any, TYPE_CHECKING, Literal, overload
 from types import MethodType
 from abc import ABC
 from dataclasses import dataclass
-import nodesio.engine.node as nodesio_engine
+import nodesIO.engine.node as nodesio_engine
 if TYPE_CHECKING:
-    from nodesio.engine.node import Node
-    from nodesio.engine.workflow import Workflow, Execution, Session
+    from nodesIO.engine.node import Node
+    from nodesIO.engine.workflow import Workflow, Execution, Session
 
 NodeExternalInput = '__input__'
 

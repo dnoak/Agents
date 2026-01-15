@@ -13,10 +13,10 @@ import graphviz
 from collections import deque
 from rich import print
 from PIL import Image
-import nodesio.engine.node as nodesio_engine
-from nodesio.models.node import NodeIO, GraphvizAttributes
+import nodesIO.engine.node as nodesio_engine
+from nodesIO.models.node import NodeIO, GraphvizAttributes
 if TYPE_CHECKING:
-    from nodesio.engine.node import Node
+    from nodesIO.engine.node import Node
 
 @dataclass
 class SessionMemory:

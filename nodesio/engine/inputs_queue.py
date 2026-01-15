@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from collections import defaultdict
 from typing import TYPE_CHECKING
-from nodesio.models.node import NodeIO
+from nodesIO.models.node import NodeIO
 if TYPE_CHECKING:
-    from nodesio.engine.node import Node
+    from nodesIO.engine.node import Node
 import asyncio
 
 @dataclass
