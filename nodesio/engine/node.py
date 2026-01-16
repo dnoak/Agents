@@ -35,22 +35,25 @@ class Node(NodeInterface):
         self._input_nodes: list[Node] = []
         self._output_nodes: list[Node] = []
         self._running: bool = False
-
+        
         if self._constructor_node:
             self._output_schema = get_type_hints(self.execute).get('return', Any)
             self._set_workflow()
             self._set_custom_data()
             self.run = self._run_in_session
-    
+
     def _set_custom_data(self):
-        self._custom_attr_names: set[str] = {
-            n.name for n in dataclasses.fields(self)
-        } | {'_output_schema'} - {'config'}
-        self._custom_methods_names: set[str] = set.difference(
-            {n[0] for n in inspect.getmembers(self, inspect.ismethod) if not n[0].startswith('_')},
-            {'connect', 'plot', 'run'}
-        )
-    
+        self._custom_attr_names: list[str] = [n.name for n in dataclasses.fields(self)] + ['_output_schema']
+        self._custom_attr_names.remove('config')
+
+        self._custom_methods_names: list[str] = [
+            name
+            for name, obj in type(self).__dict__.items()
+            if callable(obj)
+            and not name.startswith("__")
+            and name not in Node.__dict__
+        ]
+            
     def _set_workflow(self):
         if not hasattr(Node, 'workflow'):
             Node.workflow = Workflow()

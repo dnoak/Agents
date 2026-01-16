@@ -167,7 +167,7 @@ class GraphvizAttributes:
             'fontname': 'Helvetica',
         }
 
-    def node(self, name: str, output_schema: str, methods: set[str]) -> dict:
+    def node(self, name: str, output_schema: str, methods: list[str]) -> dict:
         table = '\n'.join([
             f"""
             <TR>

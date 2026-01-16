@@ -61,7 +61,7 @@ class Workflow:
         self._graphviz_attributes: GraphvizAttributes = GraphvizAttributes()
         self._constructor_nodes: list['Node'] = []
         self._node_factory = type('Node', (nodesio_engine.Node,), {'execute': None})
-
+    
     def _create_session(self, session_id: str) -> Session:
         session_nodes: dict[str, 'Node'] = {}
         for node in self._constructor_nodes:
@@ -102,7 +102,8 @@ class Workflow:
             graph_attr=self._graphviz_attributes.graph()
         )
         for node in self._constructor_nodes:
-            methods = (node._custom_methods_names - {'execute'}) if show_methods else set()
+            # methods = (node._custom_methods_names - {'execute'}) if show_methods else set()
+            methods = [n for n in node._custom_methods_names if n != 'execute'] if show_methods else []
             graph.node(
                 name=node.name,
                 **self._graphviz_attributes.node(
