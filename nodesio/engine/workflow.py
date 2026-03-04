@@ -20,13 +20,13 @@ if TYPE_CHECKING:
 
 @dataclass
 class SessionMemory:
-    messages: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=10))
-    facts: list[Any] = field(default_factory=list)
+    messages: deque[Any] = field(default_factory=lambda: deque(maxlen=50))
+    # facts: list[Any] = field(default_factory=list)
     shared: dict[str, Any] = field(default_factory=dict)
     
 @dataclass
 class Execution:
-    id: str 
+    id: str
     nodes: dict[str, 'NodeIO'] = field(default_factory=dict)
     
     def __getitem__(self, node_name: str) -> 'NodeIO':
@@ -102,8 +102,11 @@ class Workflow:
             graph_attr=self._graphviz_attributes.graph()
         )
         for node in self._constructor_nodes:
-            # methods = (node._custom_methods_names - {'execute'}) if show_methods else set()
-            methods = [n for n in node._custom_methods_names if n != 'execute'] if show_methods else []
+            methods = [
+                n for n in node._custom_methods_names 
+                if n != 'execute'
+                and not n.startswith('_')
+            ] if show_methods else []
             graph.node(
                 name=node.name,
                 **self._graphviz_attributes.node(

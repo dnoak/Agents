@@ -97,7 +97,7 @@ def batch_runs(mlp, label: str, runs: int):
 async def main():
     
     batches = 1
-    runs_per_batch = 100
+    runs_per_batch = 1000
     nn_architecture = [4, 10, 10, 10, 10, 10, 10, 10, 4, 10, 1, 10, 1, 10, 1]
     # nn_architecture = [4, 5, 5, 5, 5, 1]
     # nn_architecture = [2,500,500,500,500,500] # 1 mi

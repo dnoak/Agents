@@ -45,7 +45,6 @@ class Node(NodeInterface):
     def _set_custom_data(self):
         self._custom_attr_names: list[str] = [n.name for n in dataclasses.fields(self)] + ['_output_schema']
         self._custom_attr_names.remove('config')
-
         self._custom_methods_names: list[str] = [
             name
             for name, obj in type(self).__dict__.items()
