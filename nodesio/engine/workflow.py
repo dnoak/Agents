@@ -32,8 +32,8 @@ class Execution:
     def __getitem__(self, node_name: str) -> 'NodeIO':
         return self.nodes[node_name]
     
-    def __setitem__(self, execution_id: str, result: 'NodeIO'):
-        self.nodes[execution_id] = result
+    def __setitem__(self, node_name: str, result: 'NodeIO'):
+        self.nodes[node_name] = result
 
     def __iter__(self) -> Iterator['NodeIO']:
         return iter(self.nodes.values())

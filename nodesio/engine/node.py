@@ -52,7 +52,7 @@ class Node(NodeInterface):
             and not name.startswith("__")
             and name not in Node.__dict__
         ]
-            
+    
     def _set_workflow(self):
         if not hasattr(Node, 'workflow'):
             Node.workflow = Workflow()

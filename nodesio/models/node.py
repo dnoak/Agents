@@ -24,8 +24,9 @@ _NotProcessed = NotProcessed()
 @dataclass
 class NodeExecutorConfig:
     routing_default_policy: Literal['broadcast', 'skip'] = 'broadcast'
+    on_error_default_policy: Literal['skip', 'raise'] = 'raise'
     # execution_ttl: float = 300
-    ...
+
 
 @dataclass
 class NodeIOStatus:
